@@ -1,0 +1,1101 @@
+###TrA2 analysis: Single strain exclusion and addition to inoculum experiment
+
+# Load necessary libraries:
+# List of required packages
+required_packages <- c(
+  "ggplot2",
+  "readr",
+  "RcmdrMisc",
+  "Hmisc",
+  "multtest",
+  "reshape2",
+  "dplyr",
+  "tidyr",
+  "vegan",
+  "igraph",
+  "readxl",
+  "tidyverse",
+  "fontfamily",
+  "scales",
+  "ggsignif",
+  "ggpubr",
+  "edgeR",
+  "stringr",
+  "EnhancedVolcano",
+  "data.table",
+  "purrr",
+  "gridExtra"
+)
+
+# Install and load required packages
+for (package in required_packages) {
+  if (!requireNamespace(package, quietly = TRUE)) {
+    install.packages(package, dependencies = TRUE)
+  }
+  library(package, character.only = TRUE)
+}
+
+
+#Load in relative abundance data & metadata
+TrA2_relative_abundance <- read_delim("Downloads/TrA2_relative_abundance.txt", 
+                                      delim = "\t", escape_double = FALSE, 
+                                      trim_ws = TRUE)
+
+TrA2_metadata <- read_delim("Downloads/TrA2_metadata.tab", 
+                            delim = "\t", escape_double = FALSE, 
+                            trim_ws = TRUE)
+
+#View(TrA2_relative_abundance)
+
+TrA2_relative_abundance_table <- TrA2_relative_abundance
+
+TrA2_relative_abundance_table <- TrA2_relative_abundance_table %>%
+  mutate(
+    Name = ifelse(Name == 'Collinsella aerofaciens (S2) DSM 3979', 'C. aerofaciens', Name)
+  )
+
+TrA2_relative_abundance_table <- TrA2_relative_abundance_table %>%
+  mutate(
+    Name = ifelse(Name == 'Roseburia hominis (S1) DSM 16839', 'R. hominis', Name)
+  )
+
+TrA2_relative_abundance_table <- TrA2_relative_abundance_table %>%
+  mutate(
+    Name = ifelse(Name == 'Actinomyces odontolyticus', 'A. odontolyticus', Name)
+  )
+
+
+#44 sequences in ref —> 43 in final new ref clean
+#NT5023 represents NT5023 and NT5028: Bifidobacterium longum subsp. infantis & Bifidobacterium longum subsp. longum (S1) DSM No.: 20219
+#Rename 
+TrA2_relative_abundance_table <- TrA2_relative_abundance_table %>%
+  mutate(
+    Name = ifelse(Name == 'B. longum subsp. infantis', 'B. longum spp', Name)
+  )
+
+TrA2_relative_abundance_table <- TrA2_relative_abundance_table %>%
+  mutate(
+    nid = ifelse(nid == 'NT5023', 'NT5023/NT5028', nid)
+  )
+
+
+
+##Now, we prepare TrA2_relative_abundance_table for transposing
+TrA2_relative_abundance_table$Name <- gsub(" ", "_", TrA2_relative_abundance_table$Name)
+
+TrA2_relative_abundance_table_t<-TrA2_relative_abundance_table[, c(2:224)]
+
+
+#Transpose using tidyr
+
+# First, pivot the dataframe to long format, excluding the first column ("Name")
+long_format <- pivot_longer(
+  TrA2_relative_abundance_table_t,
+  cols = -Name,
+  names_to = "Code",
+  values_to = "Value"
+)
+
+#Then, pivot the long format dataframe to wide format using "Name" as the new column names
+TrA2_relative_abundance_table_T <- pivot_wider(
+  long_format,
+  names_from = Name,
+  values_from = Value
+)
+
+
+#Calculate Shannon alpha diversity (with handling for division by zero)
+#Convert selected columns to a matrix
+abundance_matrix <- as.matrix(TrA2_relative_abundance_table_T[, 2:44])
+
+TrA2_relative_abundance_table_T$Alpha_diversity <- rowSums(ifelse(abundance_matrix != 0,
+                                                                  abundance_matrix * log(abundance_matrix) * -1,
+                                                                  0))
+
+##Now, add Medium and Replicate columns based on the metadata in the column: "Code"
+#We use library(dplyr) and library(stringr) here
+TrA2_relative_abundance_table_T <- TrA2_relative_abundance_table_T %>%
+  mutate(
+    Medium = as.character(str_extract(Code, "(?<=Med)\\d+B?")),
+    Replicate = as.integer(substr(Code, nchar(Code), nchar(Code)))
+  )
+
+
+##Add "Condition" column based on metadata
+
+# Correct the extraction of SampleID from the Code column
+#we extract the sequence of digits from "Code", starting from 'Med' followed by any characters, and captures all characters up to the last digit.
+TrA2_relative_abundance_table_T <- TrA2_relative_abundance_table_T %>%
+  mutate(SampleID = str_extract(Code, "(?<=_)[\\w\\d]+$"))
+
+#Now that we have the SampleID, join with the metadata to add the keySpecies as the Condition
+TrA2_relative_abundance_table_T <- TrA2_relative_abundance_table_T %>%
+  left_join(TrA2_metadata %>% select(SampleID, keySpecies), by = "SampleID") %>%
+  dplyr::rename(Condition = keySpecies) # Correct the order for rename
+
+#Add "experiment_type" column
+TrA2_relative_abundance_table_T$Experiment_type <- ifelse(substr(TrA2_relative_abundance_table_T$Condition, 1, 2) == "- ", "single_exclusion",
+                                                          ifelse(substr(TrA2_relative_abundance_table_T$Condition, 1, 2) == "+ ", "single_addition", NA))
+
+#Replace "L. paracase" with "L. paracasei" in the Condition column
+TrA2_relative_abundance_table_T$Condition <- gsub("- L. paracase", "- L. paracasei", TrA2_relative_abundance_table_T$Condition)
+
+#Add "Experimental_species" column
+TrA2_relative_abundance_table_T$Experimental_species <- gsub("^[-+]+\\s*", "", TrA2_relative_abundance_table_T$Condition)
+
+#Subset by experimental type
+Single_exclusions <- subset(TrA2_relative_abundance_table_T, Experiment_type=="single_exclusion")
+Single_additions <- subset(TrA2_relative_abundance_table_T, Experiment_type=="single_addition")
+
+#For exclusions, kick out failed exclusions
+#E. coli IAI1: successfully 0 in all Medium 3 samples, but ~ 0.02 in Med8Mix152 & Med8Mix153, hence not a successful exclusion in M8
+Single_exclusions_1<-subset(Single_exclusions, !(Experimental_species == "E. coli IAI1" & Medium == 8))
+#C. ramosum: for both M3 and M8, 2/3 reps have relative abundance of >0.2 and hence not successful exclusion in either media
+Single_exclusions_1<-subset(Single_exclusions_1, Experimental_species !="C. ramosum")
+#B. uniformis: for both M3 and M8, rep 1 has ~0.01
+Single_exclusions_1 <- subset(Single_exclusions_1, !(Experimental_species == "B. uniformis" & Replicate == 1))
+#E. lenta: ~ 0.002 for 2/3 reps in M8 and hence needs to be excluded there
+Single_exclusions_1 <- subset(Single_exclusions_1, !(Experimental_species == "E. lenta" & Medium == 8))
+#S. salivarius: ~1e-04 for 2/3 reps in M3 and hence needs to be excluded there
+Single_exclusions_1 <- subset(Single_exclusions_1, !(Experimental_species == "S. salivarius" & Medium == 3))
+#C. bolteae: > 0.04 in 3/3 reps in M8 and hence needs to be excluded there
+Single_exclusions_1 <- subset(Single_exclusions_1, !(Experimental_species == "C. bolteae" & Medium == 8))
+#L. paracasei: > 0.09 in all reps for M8 and M3
+Single_exclusions_1<-subset(Single_exclusions_1, Experimental_species !="L. paracasei")
+#B. thetaiotaomicron:0.005 in rep 1 for M8 and hence needs to be excluded
+Single_exclusions_1 <- subset(Single_exclusions_1, !(Experimental_species == "B. thetaiotaomicron" & Medium == 8 & Replicate == 1))
+#C. comes: > 0.01 for all reps for M8 and M3
+Single_exclusions_1<-subset(Single_exclusions_1, Experimental_species !="C. comes")
+
+##For additions, only singly added species C. aerofaciens and R. hominis had 0 in the inoculum reps of their single addition mixes
+##We won't "kick" these out since low abundance detection does not necessarily mean they were not present altogether
+
+
+#Now, we calculate 'discounted' abundances
+#For each exclusion experiment, we take the sum of all other strains in the All condition, and divide the relative abundances of each strain by this total sum
+#That means if we exclude a strain that otherwise has a big chunk in the community, we will proportionally reallocate the 'gap' left among strains still around
+
+##Assign "ino" as medium type for inoculum replicates
+Single_exclusions_1$Medium[is.na(Single_exclusions_1$Medium)] <- 'ino'
+Single_additions$Medium[is.na(Single_additions$Medium)] <- 'ino'
+
+transposed_single_exclusions <- Single_exclusions_1 %>%
+  select(Experiment_type, Experimental_species, Replicate, Medium, Condition, starts_with("B._vulgatus") : ends_with("Alpha_diversity")) %>%
+  gather(key = Species, value = rel_ab, starts_with("B._vulgatus") : ends_with("Alpha_diversity"))
+
+transposed_single_additions <- Single_additions %>%
+  select(Experiment_type, Experimental_species, Replicate, Medium, Condition, starts_with("B._vulgatus") : ends_with("Alpha_diversity")) %>%
+  gather(key = Species, value = rel_ab, starts_with("B._vulgatus") : ends_with("Alpha_diversity"))
+
+# Convert "rel_ab" column to numeric
+transposed_single_exclusions$rel_ab <- as.numeric(transposed_single_exclusions$rel_ab)
+
+#Calculate the mean and standard deviation of relative abundance
+transposed_single_exclusions_1 <- transposed_single_exclusions %>%
+  dplyr::group_by(Experiment_type, Experimental_species, Medium, Species) %>%
+  dplyr::mutate(mean_rel_abundance = mean(rel_ab, na.rm = TRUE),
+                std_rel_abundance = sd(rel_ab, na.rm = TRUE))
+
+#Convert "rel_ab" column to numeric
+transposed_single_additions$rel_ab <- as.numeric(transposed_single_additions$rel_ab)
+
+# Calculate the mean and standard deviation of relative abundance
+transposed_single_additions_1 <- transposed_single_additions %>%
+  dplyr::group_by(Experiment_type, Experimental_species, Medium, Species) %>%
+  dplyr::mutate(mean_rel_abundance = mean(rel_ab, na.rm = TRUE),
+                std_rel_abundance = sd(rel_ab, na.rm = TRUE))
+
+
+transposed_single_exclusions_2 <- subset(transposed_single_exclusions_1, Species != "Alpha_diversity")
+transposed_single_additions_2 <- subset(transposed_single_additions_1, Species != "Alpha_diversity")
+
+
+# Calculate Total_All, check if all adds up to 1
+all_totals <- transposed_single_exclusions_2 %>%
+  filter(Experimental_species == "All") %>%
+  dplyr::group_by(Medium, Replicate) %>%
+  dplyr::summarize(sum_for_all = sum(rel_ab)) %>%
+  ungroup()
+
+transposed_single_exclusions_2$Species <- gsub("_", " ", transposed_single_exclusions_2$Species)
+
+
+#Calculate Selected_sum_All, which is the sum of all species' relative abundances for the 'All' community for each unique combination of Medium and Replicate, 
+#minus the relative abundance of the Experimental species 
+transposed_single_exclusions_2 <- subset(transposed_single_exclusions_2, Medium != "ino")
+
+#Add new columns for Selected_sum_All and discounted_ab
+transposed_single_exclusions_2$Selected_sum_All <- NA
+transposed_single_exclusions_2$discounted_ab <- NA
+
+#Loop through each Medium and Replicate
+#and ensure the dataframe is not grouped, as this can affect subsetting behaviour
+transposed_single_exclusions_2 <- ungroup(transposed_single_exclusions_2)
+
+for (medium in unique(transposed_single_exclusions_2$Medium)) {
+  for (replicate in unique(transposed_single_exclusions_2$Replicate)) {
+    
+    #Find all species when the experimental condition is 'All'
+    all_species_rel_ab <- transposed_single_exclusions_2[
+      transposed_single_exclusions_2$Medium == medium & 
+        transposed_single_exclusions_2$Replicate == replicate & 
+        transposed_single_exclusions_2$Experimental_species == "All", c("Species", "rel_ab")]
+    
+    #Loop through each Experimental_species
+    for (exp_species in unique(transposed_single_exclusions_2$Experimental_species)) {
+      if (exp_species != "All") {
+        
+        #Find the rel_ab of the Experimental_species in the 'All' condition
+        exp_rel_ab <- all_species_rel_ab$rel_ab[all_species_rel_ab$Species == exp_species]
+        
+        #next, check if there is a corresponding rel_ab for the Experimental_species
+        if (length(exp_rel_ab) == 1) {
+          #Calculate Selected_sum_All for the current combination
+          selected_sum <- 1 - exp_rel_ab
+          
+          #Get the indices for the current Medium, Replicate, and Experimental_species
+          idx <- which(transposed_single_exclusions_2$Medium == medium & 
+                         transposed_single_exclusions_2$Replicate == replicate & 
+                         transposed_single_exclusions_2$Experimental_species == exp_species)
+          
+          #Update Selected_sum_All for the current indices
+          transposed_single_exclusions_2$Selected_sum_All[idx] <- selected_sum
+          
+          # Calculate discounted_ab for the corresponding Species
+          for (i in idx) {
+            species <- transposed_single_exclusions_2$Species[i]
+            if (species != exp_species && species != "All") {
+              #Get the rel_ab for the species in 'All' condition
+              sp_rel_ab <- all_species_rel_ab$rel_ab[all_species_rel_ab$Species == species]
+              if (length(sp_rel_ab) == 1) {
+                transposed_single_exclusions_2$discounted_ab[i] <- sp_rel_ab / selected_sum
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+
+
+# Calculate the mean and standard deviation of the discounted abundance
+transposed_single_exclusions_3 <- transposed_single_exclusions_2 %>%
+  dplyr::group_by(Experimental_species, Medium, Species) %>%
+  dplyr::mutate(mean_discounted_ab = mean(discounted_ab, na.rm = TRUE),
+                std_discounted_ab = sd(discounted_ab, na.rm = TRUE))
+
+
+#Now, remove the ino media, remove the lines of 'All' under Experimental_species, and keep only one combo of Medium * Experimental_species * Species (since we have the same value for one combo multiple times across replicates)
+#& Keep calculated averages and standard deviations only:
+transposed_single_exclusions_3 <- subset(transposed_single_exclusions_3, Experimental_species != "All" & Medium != "ino")
+
+#Keep only one line per species, medium and experimental species combo
+transposed_single_exclusions_3a <- transposed_single_exclusions_3 %>%
+  distinct(Species, Medium, Experimental_species, .keep_all = TRUE)
+
+transposed_single_exclusions_3b <- transposed_single_exclusions_3a %>%
+  filter(mean_rel_abundance != 0 | mean_discounted_ab != 0)
+#View(transposed_single_exclusions_3b)
+
+transposed_single_exclusions_3c <- transposed_single_exclusions_3 %>%
+  filter(rel_ab != 0 | discounted_ab != 0)
+#View(transposed_single_exclusions_3c)
+
+#Plot discounted_ab on x-axis and measured relative abundances on y-axis, per media, with colour corresponding to species, and shape corresponding to the single
+#exclusion experiment
+#To not overcrowd the plot with all species of which many have 0 abundance in both discounted as well as measured rel ab values, we take these out first
+
+#Subset per medium
+transposed_single_exclusions_M3_a <- subset(transposed_single_exclusions_3a, Medium == 3)
+transposed_single_exclusions_M8_a <- subset(transposed_single_exclusions_3a, Medium == 8)
+
+transposed_single_exclusions_M3_b <- subset(transposed_single_exclusions_3b, Medium == 3)
+transposed_single_exclusions_M8_b <- subset(transposed_single_exclusions_3b, Medium == 8)
+
+transposed_single_exclusions_M3_c <- subset(transposed_single_exclusions_3c, Medium == 3)
+transposed_single_exclusions_M8_c <- subset(transposed_single_exclusions_3c, Medium == 8)
+
+transposed_single_exclusions_M3_d <- subset(transposed_single_exclusions_3, Medium == 3)
+transposed_single_exclusions_M8_d <- subset(transposed_single_exclusions_3, Medium == 8)
+
+
+####PLOT: single exclusions, M3
+sp<- ggplot(transposed_single_exclusions_M3_b,aes(x=(mean_discounted_ab+0.0001),y=(mean_rel_abundance+0.0001),group=Species))+
+  geom_point(size=4, stroke=1, aes(color=Species, shape=Experimental_species))
+sp0<- sp  + theme_bw() + scale_color_manual(values = c("#00AFBB","seagreen","#2e37fe", "firebrick4", "plum3", "#999999", 
+                                                                "gold1", "magenta", "yellow3","springgreen3", "cornflowerblue", "chocolate1", 
+                                                                "indianred3", "red", "navyblue", "black", "lightpink", "lightskyblue", "burlywood", 
+                                                                "aquamarine", "#6C0BA9", "white",
+                                                                "darkolivegreen4", "grey", "pink3", "green", "red3", "purple", "slategrey", "turquoise", "orange",
+                                                                "blue", "slategray1", "forestgreen", "lightgreen", "khaki", "coral1", "lavender", "mistyrose", "lemonchiffon",
+                                                                "floralwhite", "darkolivegreen2", "darkmagenta", "cyan1", "ivory2", "lemonchiffon4", "blueviolet", "burlywood4"))
+                                                                
+
+sp1<- sp0 +geom_abline(intercept = 0, slope = 1, linetype="dashed")+ scale_shape_manual(values=c(0, 1, 2, 3, 5, 9, 8, 11, 12, 14, 13))
+sp2a<-sp1 + scale_x_continuous(trans='log10', limits=c(0.0001, 1)) + scale_y_continuous(trans='log10', limits=c(0.0001, 1)) +
+  labs(title="Single exclusions in M3: Mean discounted relative abundances versus mean measured relative abundances", x = "Discounted abundance (+0.0001)", y = "Measured abundance (+0.0001)")
+sp2a
+
+##All values to inspect the inter-replicate differences
+sp<- ggplot(transposed_single_exclusions_M3_c,aes(x=(discounted_ab+0.0001),y=(rel_ab+0.0001),group=Species))+
+  geom_point(size=4, stroke=1, aes(color=Species, shape=Experimental_species))
+sp0<- sp  + theme_bw() + scale_color_manual(values = c("#00AFBB","seagreen","#2e37fe", "firebrick4", "plum3", "#999999", 
+                                                                "gold1", "magenta", "yellow3","springgreen3", "cornflowerblue", "chocolate1", 
+                                                                "indianred3", "red", "navyblue", "black", "lightpink", "lightskyblue", "burlywood", 
+                                                                "aquamarine", "#6C0BA9","darkolivegreen4", "grey", "pink3", "green", "red3", "purple", "slategrey", "turquoise", "orange",
+                                                                "blue", "slategray1", "forestgreen", "lightgreen", "khaki", "coral1", "lavender", "mistyrose", "lemonchiffon",
+                                                                "floralwhite", "darkolivegreen2", "darkmagenta", "cyan1", "ivory2", "lemonchiffon4", "blueviolet", "burlywood4"))
+                                                                
+
+sp1<- sp0 +geom_abline(intercept = 0, slope = 1, linetype="dashed")+ scale_shape_manual(values=c(0, 1, 2, 3, 5, 9, 8, 11, 12, 14, 13))
+sp2a<-sp1 + scale_x_continuous(trans='log10', limits=c(0.0001, 1)) + scale_y_continuous(trans='log10', limits=c(0.0001, 1)) +
+  labs(title="Single exclusions in M3: Discounted relative abundances versus measured relative abundances", x = "Discounted abundance (+0.0001)", y = "Measured abundance (+0.0001)")
+sp2a
+
+#With errorbars, Single exclusions, M3
+sp1 <- sp1 + geom_errorbar(aes(ymin=(mean_rel_abundance)-std_rel_abundance, ymax=(mean_rel_abundance)+std_rel_abundance), 
+                           width=.1, alpha=0.3) + 
+  geom_errorbar(aes(xmin=(mean_discounted_ab)-std_discounted_ab, xmax=(mean_discounted_ab)+std_discounted_ab), 
+                width=.1, alpha=0.5) +
+  labs(title="Single exclusions in M3: Mean discounted relative abundances versus mean measured relative abundances", x = "Discounted abundance", y = "Measured abundance")
+sp1
+
+##Plot for M8
+sp<- ggplot(transposed_single_exclusions_M8_b,aes(x=(mean_discounted_ab+0.0001),y=(mean_rel_abundance+0.0001),group=Species))+
+  geom_point(size=4, stroke=1, aes(color=Species, shape=Experimental_species))
+sp0<- sp  + theme_bw() + scale_color_manual(values = c("#00AFBB","seagreen","#2e37fe", "firebrick4", "plum3", "#999999", 
+                                                                "gold1", "magenta", "yellow3","springgreen3", "cornflowerblue", "chocolate1", 
+                                                                "indianred3", "red", "navyblue", "black", "lightpink", "lightskyblue", "burlywood", 
+                                                                "aquamarine", "#6C0BA9", "white",
+                                                                "darkolivegreen4", "grey", "pink3", "green", "red3", "purple", "slategrey", "turquoise", "orange",
+                                                                "blue", "slategray1", "forestgreen", "lightgreen", "khaki", "coral1", "lavender", "mistyrose", "lemonchiffon",
+                                                                "floralwhite", "darkolivegreen2", "darkmagenta", "cyan1", "ivory2", "lemonchiffon4", "blueviolet", "burlywood4"))
+                                                                
+
+sp1<- sp0 +geom_abline(intercept = 0, slope = 1, linetype="dashed")+ scale_shape_manual(values=c(0, 1, 2, 3, 5, 9, 8, 11, 12, 14, 13))
+sp2a<-sp1 + scale_x_continuous(trans='log10', limits=c(0.0001, 1)) + scale_y_continuous(trans='log10', limits=c(0.0001, 1)) +
+  labs(title="Single exclusions in M8: Mean discounted relative abundances versus mean measured relative abundances", x = "Discounted abundance (+0.0001)", y = "Measured abundance (+0.0001)")
+sp2a
+
+##All values to inspect the inter-replicate differences
+sp<- ggplot(transposed_single_exclusions_M8_c,aes(x=(discounted_ab+0.0001),y=(rel_ab+0.0001),group=Species))+
+  geom_point(size=4, stroke=1, aes(color=Species, shape=Experimental_species))
+sp0<- sp  + theme_bw() + scale_color_manual(values = c("#00AFBB","seagreen","#2e37fe", "firebrick4", "plum3", "#999999", 
+                                                                "gold1", "magenta", "yellow3","springgreen3", "cornflowerblue", "chocolate1", 
+                                                                "indianred3", "red", "navyblue", "black", "lightpink", "lightskyblue", "burlywood", 
+                                                                "aquamarine", "#6C0BA9","darkolivegreen4", "grey", "pink3", "green", "red3", "purple", "slategrey", "turquoise", "orange",
+                                                                "blue", "slategray1", "forestgreen", "lightgreen", "khaki", "coral1", "lavender", "mistyrose", "lemonchiffon",
+                                                                "floralwhite", "darkolivegreen2", "darkmagenta", "cyan1", "ivory2", "lemonchiffon4", "blueviolet", "burlywood4"))
+                                                                
+
+sp1<- sp0 +geom_abline(intercept = 0, slope = 1, linetype="dashed")+ scale_shape_manual(values=c(0, 1, 2, 3, 5, 9, 8, 11, 12, 14, 13))
+sp2a<-sp1 + scale_x_continuous(trans='log10', limits=c(0.0001, 1)) + scale_y_continuous(trans='log10', limits=c(0.0001, 1)) +
+  labs(title="Single exclusions in M8: Discounted relative abundances versus measured relative abundances", x = "Discounted abundance (+0.0001)", y = "Measured abundance (+0.0001)")
+sp2a
+
+
+
+#Logged + errorbars
+sp2b <- sp2a + geom_errorbar(aes(ymin=(mean_rel_abundance+0.0001)-(std_rel_abundance), ymax=(mean_rel_abundance+0.0001)+(std_rel_abundance)), 
+                             width=.1, alpha=0.3) + 
+  geom_errorbar(aes(xmin=(mean_discounted_ab+0.0001)-(std_discounted_ab), xmax=(mean_discounted_ab+0.0001)+(std_discounted_ab)), 
+                width=.1, alpha=0.3)
+sp2b 
+
+#With errorbars, Single exclusions, M8
+sp1a <- sp1 + geom_errorbar(aes(ymin=(mean_rel_abundance)-std_rel_abundance, ymax=(mean_rel_abundance)+std_rel_abundance), 
+                            width=.1, alpha=0.3) + 
+  geom_errorbar(aes(xmin=(mean_discounted_ab)-std_discounted_ab, xmax=(mean_discounted_ab)+std_discounted_ab), 
+                width=.1, alpha=0.3) +
+  labs(title="Single exclusions in M8: Mean discounted relative abundances versus mean measured relative abundances", x = "Discounted abundance", y = "Measured abundance")
+sp1a
+
+
+
+
+##Now for the single additions data:
+## the 'All' condition contains all species that are singly added. A single addition is thus + 1 but minus the rest.
+## Hence, we need to calculate discounted abundance by taking the relative abundance of all Species that are also Experimental_species, except for the Species = Experimental Species
+# This would amount to a Selected_sum_All 1 - (rel_ab of all singly added species, except for the singly added species), and a discounted abundance of rel_ab of Species x in the respective '+All' community, divided by this Sum_selected_All
+# So let's say species X, Y & Z are all singly added (at some point) for Medium 8, Replicate 1, and in the 'All' for Medium 8 & Replicate 1, the sum of their relative abundance is rel_ab X (0.1) + Y (0.05) + Z (0.25)= 0.4, 
+#then, if Experimental_species = Species Z, the respective Sum_selected_All for that specific combination of Experimental_species, Medium and Replicate is 1 - (rel_ab X +Y), so 1 - 0.15 = 0.85. 
+#Then, discounted_ab is calculated similarly as in code used for single_exclusions. 
+
+# Calculate Total_All, check if all adds up to 1
+all_totals <- transposed_single_additions_2 %>%
+  filter(Experimental_species == "All") %>%
+  dplyr::group_by(Medium, Replicate) %>%
+  dplyr::summarize(sum_for_all = sum(rel_ab)) %>%
+  ungroup()
+
+transposed_single_additions_2$Species <- gsub("_", " ", transposed_single_additions_2$Species)
+
+
+#Calculate Selected_sum_All, which is the sum of all species' relative abundances for the 'All' community for each unique combination of Medium and Replicate, 
+#minus the relative abundance of the Experimental species 
+transposed_single_additions_2 <- subset(transposed_single_additions_2, Medium != "ino")
+
+#Add new columns for Selected_sum_All and discounted_ab
+transposed_single_additions_2$Selected_sum_All <- NA
+transposed_single_additions_2$discounted_ab <- NA
+
+
+#Ensure the dataframe is not grouped, as this can affect subsetting behavior
+transposed_single_additions_2 <- ungroup(transposed_single_additions_2)
+
+for (medium in unique(transposed_single_additions_2$Medium)) {
+  for (replicate in unique(transposed_single_additions_2$Replicate)) {
+    
+    #Find all species when the experimental condition is 'All'
+    all_species_rel_ab <- transposed_single_additions_2[
+      transposed_single_additions_2$Medium == medium & 
+        transposed_single_additions_2$Replicate == replicate & 
+        transposed_single_additions_2$Experimental_species == "All", c("Species", "rel_ab")]
+    
+    #find the total rel_ab of all species that are added at some point
+    total_added_rel_ab <- sum(all_species_rel_ab$rel_ab[all_species_rel_ab$Species %in% unique(transposed_single_additions_2$Experimental_species)])
+    
+    #next, loop through each Experimental_species
+    for (exp_species in unique(transposed_single_additions_2$Experimental_species)) {
+      if (exp_species != "All") {
+        
+        #Find the rel_ab of the Experimental_species in the 'All' condition
+        exp_rel_ab <- all_species_rel_ab$rel_ab[all_species_rel_ab$Species == exp_species]
+        
+        #calculate Selected_sum_All for the current combination, excluding the Experimental_species
+        selected_sum <- 1 - (total_added_rel_ab - exp_rel_ab)
+        
+        #Get the indices for the current Medium, Replicate, and Experimental_species
+        idx <- which(transposed_single_additions_2$Medium == medium & 
+                       transposed_single_additions_2$Replicate == replicate & 
+                       transposed_single_additions_2$Experimental_species == exp_species)
+        
+        #Update Selected_sum_All for the current indices
+        transposed_single_additions_2$Selected_sum_All[idx] <- selected_sum
+        
+        #Calculate discounted_ab for the corresponding Species
+        for (i in idx) {
+          species <- transposed_single_additions_2$Species[i]
+          if (species != "All") {
+            #Get the rel_ab for the species in 'All' condition
+            sp_rel_ab <- all_species_rel_ab$rel_ab[all_species_rel_ab$Species == species]
+            if (length(sp_rel_ab) == 1) {
+              transposed_single_additions_2$discounted_ab[i] <- sp_rel_ab / selected_sum
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+
+# Calculate the mean and standard deviation of the discounted abundance
+transposed_single_additions_3 <- transposed_single_additions_2 %>%
+  dplyr::group_by(Experimental_species, Medium, Species) %>%
+  dplyr::mutate(mean_discounted_ab = mean(discounted_ab, na.rm = TRUE),
+                std_discounted_ab = sd(discounted_ab, na.rm = TRUE))
+
+
+#Now, remove the ino media, remove the lines of 'All' under Experimental_species, and keep only one combo of Medium * Experimental_species * Species (since we have the same value for one combo multiple times across replicates)
+#& Keep calculated averages and standard deviations only:
+transposed_single_additions_3 <- subset(transposed_single_additions_3, Experimental_species != "All" & Medium != "ino")
+
+#Keep only one line per species, medium and experimental species combo
+transposed_single_additions_3a <- transposed_single_additions_3 %>%
+  distinct(Species, Medium, Experimental_species, .keep_all = TRUE)
+
+transposed_single_additions_3b <- transposed_single_additions_3a %>%
+  filter(mean_rel_abundance != 0 | mean_discounted_ab != 0)
+#View(transposed_single_additions_3b)
+
+transposed_single_additions_3c <- transposed_single_additions_3 %>%
+  filter(rel_ab != 0 | discounted_ab != 0)
+#View(transposed_single_additions_3c)
+
+#Plot discounted_ab on x-axis and measured relative abundances on y-axis, per media, with colour corresponding to species, and shape corresponding to the single
+#additions experiment
+#To not overcrowd the plot with all species of which many have 0 abundance in both discounted as well as measured rel ab values, we take these out first
+
+#Subset per media
+transposed_single_additions_M3_a <- subset(transposed_single_additions_3a, Medium == 3)
+transposed_single_additions_M8_a <- subset(transposed_single_additions_3a, Medium == 8)
+
+transposed_single_additions_M3_b <- subset(transposed_single_additions_3b, Medium == 3)
+transposed_single_additions_M8_b <- subset(transposed_single_additions_3b, Medium == 8)
+
+transposed_single_additions_M3_c <- subset(transposed_single_additions_3c, Medium == 3)
+transposed_single_additions_M8_c <- subset(transposed_single_additions_3c, Medium == 8)
+
+transposed_single_additions_M3_d <- subset(transposed_single_additions_3, Medium == 3)
+transposed_single_additions_M8_d <- subset(transposed_single_additions_3, Medium == 8)
+
+
+
+####PLOT: single additions, M3
+sp<- ggplot(transposed_single_additions_M3_b,aes(x=(mean_discounted_ab+0.0001),y=(mean_rel_abundance+0.0001),group=Species))+
+  geom_point(size=4, stroke=1, aes(color=Species, shape=Experimental_species))
+sp0<- sp  + theme_bw() + scale_color_manual(values = c("#00AFBB","seagreen","#2e37fe", "firebrick4", "plum3", "#999999", 
+                                                                "gold1", "magenta", "yellow3","springgreen3", "cornflowerblue", "chocolate1", 
+                                                                "indianred3", "red", "navyblue", "black", "lightpink", "lightskyblue", "burlywood", 
+                                                                "aquamarine", "#6C0BA9", "white",
+                                                                "darkolivegreen4", "grey", "pink3", "green", "red3", "purple", "slategrey", "turquoise", "orange",
+                                                                "blue", "slategray1", "forestgreen", "lightgreen", "khaki", "coral1", "lavender", "mistyrose", "lemonchiffon",
+                                                                "floralwhite", "darkolivegreen2", "darkmagenta", "cyan1", "ivory2", "lemonchiffon4", "blueviolet", "burlywood4"))
+                                                                
+
+sp1<- sp0 +geom_abline(intercept = 0, slope = 1, linetype="dashed")+ scale_shape_manual(values=c(0, 1, 2, 3, 5, 9, 8, 11, 12, 14, 13, 4))
+sp2a<-sp1 + scale_x_continuous(trans='log10', limits=c(0.0001, 1)) + scale_y_continuous(trans='log10', limits=c(0.0001, 1)) +
+  labs(title="Single additions in M3: Mean discounted relative abundances versus mean measured relative abundances", x = "Discounted abundance (+0.0001)", y = "Measured abundance (+0.0001)")
+sp2a
+
+##All values to inspect the inter-replicate differences
+sp<- ggplot(transposed_single_additions_M3_c,aes(x=(discounted_ab+0.0001),y=(rel_ab+0.0001),group=Species))+
+  geom_point(size=4, stroke=1, aes(color=Species, shape=Experimental_species))
+sp0<- sp  + theme_bw() + scale_color_manual(values = c("#00AFBB","seagreen","#2e37fe", "firebrick4", "plum3", "#999999", 
+                                                                "gold1", "magenta", "yellow3","springgreen3", "cornflowerblue", "chocolate1", 
+                                                                "indianred3", "red", "navyblue", "black", "lightpink", "lightskyblue", "burlywood", 
+                                                                "aquamarine", "#6C0BA9","darkolivegreen4", "grey", "pink3", "green", "red3", "purple", "slategrey", "turquoise", "orange",
+                                                                "blue", "slategray1", "forestgreen", "lightgreen", "khaki", "coral1", "lavender", "mistyrose", "lemonchiffon",
+                                                                "floralwhite", "darkolivegreen2", "darkmagenta", "cyan1", "ivory2", "lemonchiffon4", "blueviolet", "burlywood4"))
+                                                                
+
+sp1<- sp0 +geom_abline(intercept = 0, slope = 1, linetype="dashed")+ scale_shape_manual(values=c(0, 1, 2, 3, 5, 9, 8, 11, 12, 14, 13, 4))
+sp2a<-sp1 + scale_x_continuous(trans='log10', limits=c(0.0001, 1)) + scale_y_continuous(trans='log10', limits=c(0.0001, 1)) +
+  labs(title="Single additions in M3: Discounted relative abundances versus measured relative abundances", x = "Discounted abundance (+0.0001)", y = "Measured abundance (+0.0001)")
+sp2a
+
+#With errorbars, Single additions, M3
+sp1 <- sp1 + geom_errorbar(aes(ymin=(mean_rel_abundance)-std_rel_abundance, ymax=(mean_rel_abundance)+std_rel_abundance), 
+                           width=.1, alpha=0.3) + 
+  geom_errorbar(aes(xmin=(mean_discounted_ab)-std_discounted_ab, xmax=(mean_discounted_ab)+std_discounted_ab), 
+                width=.1, alpha=0.5) +
+  labs(title="Single additions in M3: Mean discounted relative abundances versus mean measured relative abundances", x = "Discounted abundance", y = "Measured abundance")
+sp1
+
+##Plot for M8 single additions
+sp<- ggplot(transposed_single_additions_M8_b,aes(x=(mean_discounted_ab+0.0001),y=(mean_rel_abundance+0.0001),group=Species))+
+  geom_point(size=4, stroke=1, aes(color=Species, shape=Experimental_species))
+sp0<- sp  + theme_bw() + scale_color_manual(values = c("#00AFBB","seagreen","#2e37fe", "firebrick4", "plum3", "#999999", 
+                                                                "gold1", "magenta", "yellow3","springgreen3", "cornflowerblue", "chocolate1", 
+                                                                "indianred3", "red", "navyblue", "black", "lightpink", "lightskyblue", "burlywood", 
+                                                                "aquamarine", "#6C0BA9", "white",
+                                                                "darkolivegreen4", "grey", "pink3", "green", "red3", "purple", "slategrey", "turquoise", "orange",
+                                                                "blue", "slategray1", "forestgreen", "lightgreen", "khaki", "coral1", "lavender", "mistyrose", "lemonchiffon",
+                                                                "floralwhite", "darkolivegreen2", "darkmagenta", "cyan1", "ivory2", "lemonchiffon4", "blueviolet", "burlywood4"))
+                                                                
+
+sp1<- sp0 +geom_abline(intercept = 0, slope = 1, linetype="dashed")+ scale_shape_manual(values=c(0, 1, 2, 3, 5, 9, 8, 11, 12, 14, 13, 4))
+sp2a<-sp1 + scale_x_continuous(trans='log10', limits=c(0.0001, 1)) + scale_y_continuous(trans='log10', limits=c(0.0001, 1)) +
+  labs(title="Single additions in M8: Mean discounted relative abundances versus mean measured relative abundances", x = "Discounted abundance (+0.0001)", y = "Measured abundance (+0.0001)")
+sp2a
+
+##All values to inspect the inter-replicate differences
+sp<- ggplot(transposed_single_additions_M8_c,aes(x=(discounted_ab+0.0001),y=(rel_ab+0.0001),group=Species))+
+  geom_point(size=4, stroke=1, aes(color=Species, shape=Experimental_species))
+sp0<- sp  + theme_bw() + scale_color_manual(values = c("#00AFBB","seagreen","#2e37fe", "firebrick4", "plum3", "#999999", 
+                                                                "gold1", "magenta", "yellow3","springgreen3", "cornflowerblue", "chocolate1", 
+                                                                "indianred3", "red", "navyblue", "black", "lightpink", "lightskyblue", "burlywood", 
+                                                                "aquamarine", "#6C0BA9","darkolivegreen4", "grey", "pink3", "green", "red3", "purple", "slategrey", "turquoise", "orange",
+                                                                "blue", "slategray1", "forestgreen", "lightgreen", "khaki", "coral1", "lavender", "mistyrose", "lemonchiffon",
+                                                                "floralwhite", "darkolivegreen2", "darkmagenta", "cyan1", "ivory2", "lemonchiffon4", "blueviolet", "burlywood4"))
+                                                                
+
+sp1<- sp0 +geom_abline(intercept = 0, slope = 1, linetype="dashed")+ scale_shape_manual(values=c(0, 1, 2, 3, 5, 9, 8, 11, 12, 14, 13, 4))
+sp2a<-sp1 + scale_x_continuous(trans='log10', limits=c(0.0001, 1)) + scale_y_continuous(trans='log10', limits=c(0.0001, 1)) +
+  labs(title="Single additions in M8: Discounted relative abundances versus measured relative abundances", x = "Discounted abundance (+0.0001)", y = "Measured abundance (+0.0001)")
+sp2a
+
+
+
+#Logged + errorbars
+sp2b <- sp2a + geom_errorbar(aes(ymin=(mean_rel_abundance+0.0001)-(std_rel_abundance), ymax=(mean_rel_abundance+0.0001)+(std_rel_abundance)), 
+                             width=.1, alpha=0.3) + 
+  geom_errorbar(aes(xmin=(mean_discounted_ab+0.0001)-(std_discounted_ab), xmax=(mean_discounted_ab+0.0001)+(std_discounted_ab)), 
+                width=.1, alpha=0.3)
+sp2b 
+
+#With errorbars, Single additions, M8
+sp1a <- sp1 + geom_errorbar(aes(ymin=(mean_rel_abundance)-std_rel_abundance, ymax=(mean_rel_abundance)+std_rel_abundance), 
+                            width=.1, alpha=0.3) + 
+  geom_errorbar(aes(xmin=(mean_discounted_ab)-std_discounted_ab, xmax=(mean_discounted_ab)+std_discounted_ab), 
+                width=.1, alpha=0.3) +
+  labs(title="Single additions in M8: Mean discounted relative abundances versus mean measured relative abundances", x = "Discounted abundance", y = "Measured abundance")
+sp1a
+
+
+
+###Now, to bring all this information together, we will put it in a heatmap
+## To emphasise 'disproportional' changes, we will plot two things:
+#A) Shifts; away from the predicted abundance: rel_ab - discounted_ab; so if positive, does better than proportional redistribution of opened up relative abundance space
+#if negative, does worse than proportional redistribution of opened-up space
+#B) Relative shifts; (rel_ab - discounted_ab)/discounted_ab. So if C. ramosum has a big relative abundance in the discounted_ab as well, a change of 1% is not that spectacular, whereas for a small-abundant bug it is
+
+transposed_single_exclusions_M3_d$Shift <- transposed_single_exclusions_M3_d$mean_rel_abundance - transposed_single_exclusions_M3_d$mean_discounted_ab
+transposed_single_exclusions_M8_d$Shift <- transposed_single_exclusions_M8_d$mean_rel_abundance - transposed_single_exclusions_M8_d$mean_discounted_ab
+transposed_single_additions_M3_d$Shift <- transposed_single_additions_M3_d$mean_rel_abundance - transposed_single_additions_M3_d$mean_discounted_ab
+transposed_single_additions_M8_d$Shift <- transposed_single_additions_M8_d$mean_rel_abundance - transposed_single_additions_M8_d$mean_discounted_ab
+
+
+transposed_single_exclusions_M3_d$Relative_shift <-  (((transposed_single_exclusions_M3_d$mean_rel_abundance - transposed_single_exclusions_M3_d$mean_discounted_ab)) / (transposed_single_exclusions_M3_d$mean_discounted_ab))  
+transposed_single_exclusions_M8_d$Relative_shift <-  (((transposed_single_exclusions_M8_d$mean_rel_abundance - transposed_single_exclusions_M8_d$mean_discounted_ab)) / (transposed_single_exclusions_M8_d$mean_discounted_ab))  
+transposed_single_additions_M3_d$Relative_shift <-  (((transposed_single_additions_M3_d$mean_rel_abundance - transposed_single_additions_M3_d$mean_discounted_ab)) / (transposed_single_additions_M3_d$mean_discounted_ab))  
+transposed_single_additions_M8_d$Relative_shift <-  (((transposed_single_additions_M8_d$mean_rel_abundance - transposed_single_additions_M8_d$mean_discounted_ab)) / (transposed_single_additions_M8_d$mean_discounted_ab)) 
+
+
+
+Shifts_single_add_excl <- rbind(transposed_single_exclusions_M3_d, 
+                                transposed_single_exclusions_M8_d, 
+                                transposed_single_additions_M3_d, 
+                                transposed_single_additions_M8_d)
+
+#If predicted abundance, discounted abundance, is 0 but measured abundance is non-zero, the outcome of the relative shift is 'inf' --> the bug dus infinitely better 
+# However, to put in a linear range with the rest, we shall assign a value larger than the maximum numerical value observed (a relative shift of ~17)
+Shifts_single_add_excl[is.nan(Shifts_single_add_excl)] <- NA
+Shifts_single_add_excl[Shifts_single_add_excl == Inf] <- 18
+
+
+#Prepare heatmap
+#filter out the heatmap cells that correspond to singly added species when they themselves are not added
+# Get the unique species that are added in single addition experiments
+Single_additions_only <- subset(Shifts_single_add_excl, Experiment_type == "single_addition")
+add_species <- unique(Single_additions_only$Experimental_species)
+
+#Apply the conditions to assign NAs
+Shifts_single_add_excl_filtered_all <- Shifts_single_add_excl%>%
+  dplyr::mutate(
+    Shift = case_when(
+      Experiment_type == "single_addition" & 
+        Species %in% add_species & 
+        Species != Experimental_species ~ NA_real_,
+      TRUE ~ Shift
+    )
+  )
+
+Shifts_single_add_excl_filtered_all <- Shifts_single_add_excl_filtered_all%>%
+  dplyr::mutate(
+    Relative_shift = case_when(
+      Experiment_type == "single_addition" & 
+        Species %in% add_species & 
+        Species != Experimental_species ~ NA_real_,
+      TRUE ~  Relative_shift
+    )
+  )
+
+
+
+###Prepare to plot (relative) shift values across all single exclusion and addition experiments in a heatmap
+
+#Ensure Species is a factor
+Shifts_single_add_excl_filtered_all$Species <- factor(Shifts_single_add_excl_filtered_all$Species)
+
+#Expand the data
+expanded_data <- expand.grid(
+  Species = levels(Shifts_single_add_excl_filtered_all$Species),
+  Condition = unique(Shifts_single_add_excl_filtered_all$Condition),
+  Medium = unique(Shifts_single_add_excl_filtered_all$Medium)
+)
+
+#Fill in the Shift values
+expanded_data <- left_join(expanded_data, Shifts_single_add_excl_filtered_all, by = c("Species", "Condition", "Medium"))
+
+expanded_data <- expanded_data %>%
+  filter(!is.na(Condition) & Condition != "")
+
+##Plot heatmaps with even species on either side of the panelled plot:
+#Since some species may have exclusively had 0 abundance in one medium, but not the other, not all species were present for either panel
+
+#Step 1: Create a complete list of species (add rev() in beginning if needing to change order on y-axis)
+all_species <- (unique(c(levels(expanded_data$Species), levels(expanded_data$Species))))
+
+#Step 2: Ensure that 'Species' is a factor with the reversed levels
+expanded_data$Species <- factor(expanded_data$Species, levels = all_species)
+
+#Step 3: Create a complete grid with all combinations of 'Species', 'Medium', and 'Experimental_species'
+complete_grid <- expand.grid(
+  Species = all_species,
+  Medium = unique(expanded_data$Medium),
+  Condition = unique(expanded_data$Condition)
+)
+
+#Step 4: Merge the complete grid with the original data to fill in missing rows with NA
+complete_data <- merge(complete_grid, expanded_data, by = c("Species", "Medium", "Condition"), all.x = TRUE)
+
+#Step 5: Remove 'NA' from 'Experimental_species_and_repl' to avoid empty columns
+complete_data <- complete_data[!is.na(complete_data$Condition), ]
+
+#Step 6: ensure all single exclusions are on the left side of the plot, and all single additions are on the right
+exp_spec <- complete_data$Condition
+
+exclusions <- exp_spec[grep("^-", exp_spec)]
+additions <- exp_spec[grep("^\\+", exp_spec)]
+
+exclusions <- unique(sort(exclusions))
+additions <- unique(sort(additions))
+
+#Combine them back together with exclusions first
+ordered_exp_spec <- c(exclusions, additions)
+
+# Now factor 'Condition' with the new order
+complete_data$Condition <- factor(complete_data$Condition, 
+                                  levels = ordered_exp_spec)
+
+##Step 7: Stats test; combinations of Condition and Species where there is a significant difference between mean_rel_abundance and mean_discounted_ab
+
+complete_data <- complete_data %>%
+  dplyr::group_by(Condition, Species, Medium) %>%
+  dplyr::mutate(
+    # Perform a t-test using mean and standard deviation values
+    t_value = (mean_rel_abundance - mean_discounted_ab) /
+      sqrt((std_rel_abundance^2 + std_discounted_ab^2) / 2),
+    df = (2 * (length(rel_ab) - 1)),
+    p_value = 2 * pt(-abs(t_value), df), #multiplied by 2 for two-tailed testing
+    sig_diff = ifelse(p_value < 0.05, TRUE, FALSE) 
+  ) %>%
+  ungroup()
+
+# Now, prepare to plot the heatmap, relative shifts
+
+##With significant changes highlighted in the plot
+# Apply the conditions to assign NAs to the significant losses for singly added species relative to the '+All' community since obviously they are not present in other single additions
+#and thus significance there is not informative (just shows the experimental design worked, which we assessed earlier)
+
+#Take out species that are always 0 abundance
+filtered_data <- complete_data %>%
+  dplyr::mutate(Relative_shift = ifelse(mean_discounted_ab == 0 & mean_rel_abundance == 0, NA, Relative_shift))
+
+filtered_data <- complete_data %>%
+  dplyr::group_by(Species) %>%
+  dplyr::filter(any(mean_rel_abundance > 0) | any(mean_discounted_ab > 0)) %>%
+  dplyr::ungroup()
+
+# Apply the conditions to assign NAs to the significant losses for singly added species relative to the '+All' community since obviously they are not present in other single additions
+#and thus significance there is not informative (just shows the experimental design worked, which we assessed earlier)
+filtered_data <- filtered_data%>%
+  dplyr::mutate(
+    sig_diff = case_when(
+      Experiment_type == "single_addition" & 
+        Species %in% add_species & 
+        Species != Experimental_species ~ NA_real_,
+      TRUE ~ sig_diff
+    )
+  )
+
+#Min and max relative shifts
+min_value <- min(Shifts_single_add_excl_filtered_all$Relative_shift, na.rm = TRUE)
+max_value <- max(Shifts_single_add_excl_filtered_all$Relative_shift, na.rm = TRUE)
+
+# Define breakpoints including a narrow white band around zero
+breaks <- c(min_value, -0.5, -0.05, 0, 0.05, 1, 5, max_value)
+rescaled_breakpoints <- scales::rescale(breaks, to = c(0, 1))
+
+# Define colours with white at the center for zero values
+colors <- c("lightblue3", "lightblue", "white", "white", "white", "#f7e8ea", "#FFD1DC", "pink2")
+color_gradient <- colorRampPalette(colors)(length(breaks) - 1)
+
+# Define your custom breaks and labels
+custom_breaks <- c(min_value, 0, 1, 10, max_value)
+custom_labels <- c("-1", "0", "1", "10", "inf")
+
+
+##Without annotations
+ggplot(filtered_data, aes(x = Condition, y = Species, fill = Relative_shift)) + 
+  geom_tile() +
+  theme(axis.text.x = element_text(angle = 70, hjust = 1)) +
+  labs(title = "Heatmap of mean relative shifts across single exclusions/additions and Species",
+       x = "Key Species",
+       y = "Species",
+       fill = "Relative 
+shift") +
+  scale_fill_gradientn(colors = color_gradient,
+                       values = rescaled_breakpoints,  
+                       na.value = "transparent",
+                       breaks = custom_breaks,   
+                       labels = custom_labels,
+                       guide = guide_colourbar(ticks = TRUE, nbin = 50, barwidth = 0.5, 
+                                               barheight = 12, label.hjust = 0.5, label.vjust = 0.5, 
+                                               label.theme = element_text(size = 10, angle = 0,   
+                                                                          hjust = 0.5, vjust = 0.5), 
+                                               title.theme = element_text(size = 12, angle = 0, 
+                                                                          hjust = 0.5, vjust = 0.5, 
+                                                                          face = "bold"))) +
+  facet_wrap(~ Medium, scales = "free_x")
+
+
+##With significance annotations
+#title = "Heatmap of mean relative shifts across single exclusions/additions and Species",
+#x = "Key Species",
+#y = "Species",
+ggplot(filtered_data, aes(x = Condition, y = Species, fill = Relative_shift)) + 
+  geom_tile() +
+  geom_text(aes(label = ifelse(sig_diff, "*", "")),  #Adds '*' to significant cells. Note: does not correspond with significance level
+            color = "black", size = 4, vjust = 0.5, hjust = 0.5) +  
+  theme(axis.text.x = element_text(angle = 70, hjust = 1)) +
+  labs(fill = "Relative
+Shift") +
+  scale_fill_gradientn(colors = color_gradient,
+                       values = rescaled_breakpoints,  
+                       na.value = "transparent",
+                       breaks = custom_breaks,   
+                       labels = custom_labels,
+                       guide = guide_colourbar(ticks = TRUE, nbin = 50, barwidth = 0.5, 
+                                               barheight = 12, label.hjust = 0.5, label.vjust = 0.5, 
+                                               label.theme = element_text(size = 10, angle = 0,   
+                                                                          hjust = 0.5, vjust = 0.5), 
+                                               title.theme = element_text(size = 11, angle = 0, 
+                                                                          hjust = 0.5, vjust = 0.5, 
+                                                                          face = "bold"))) +
+  facet_wrap(~ Medium, scales = "free_x")
+
+
+
+
+
+##And for Shift (rel_ab minus discounted_ab, in other words: 'real' abundance minus the expected abundance based on proportional redistribution of open space)
+
+#Take out species that are always 0 abundance
+filtered_data <- complete_data %>%
+  dplyr::mutate(Shift = ifelse(mean_discounted_ab == 0 & mean_rel_abundance == 0, NA, Shift))
+
+filtered_data <- filtered_data %>%
+  dplyr::group_by(Species) %>%
+  dplyr::filter(any(mean_rel_abundance > 0) | any(mean_discounted_ab > 0)) %>%
+  dplyr::ungroup()
+
+#Min and max shifts
+min_value <- min(filtered_data$Shift, na.rm = TRUE)
+max_value <- max(filtered_data$Shift, na.rm = TRUE)
+
+#Define breakpoints including a narrow white band around zero
+breaks <- c(min_value, -0.05, 0, 0, 0.05, max_value)
+rescaled_breakpoints <- scales::rescale(breaks, to = c(0, 1))
+
+#Define colours with white at the center for zero values
+colors <- c("lightblue3", "lightblue", "white", "white", "lightpink", "#DE5D83")
+color_gradient <- colorRampPalette(colors)(length(breaks) - 1)
+
+##Without annotations
+ggplot(filtered_data, aes(x = Condition, y = Species, fill = Shift)) + 
+  geom_tile() +
+  theme(axis.text.x = element_text(angle = 70, hjust = 1)) +
+  labs(title = "Heatmap of mean shifts across single exclusions/additions and Species",
+       x = "Key Species",
+       y = "Species",
+       fill = "Shift") +
+  scale_fill_gradientn(colors = color_gradient,
+                       values = rescaled_breakpoints,  
+                       na.value = "transparent",
+                       guide = guide_colourbar(ticks = TRUE, nbin = 50, barwidth = 0.5, 
+                                               barheight = 12, label.hjust = 0.5, label.vjust = 0.5, 
+                                               label.theme = element_text(size = 14, angle = 0,   
+                                                                          hjust = 0.5, vjust = 0.5), 
+                                               title.theme = element_text(size = 12, angle = 0, 
+                                                                          hjust = 0.5, vjust = 0.5, 
+                                                                          face = "bold"))) +
+  facet_wrap(~ Medium, scales = "free_x")
+
+
+##With significance annotations
+# Apply the conditions to assign NAs to the significant losses for singly added species relative to the '+All' community since obviously they are not present in other single additions
+#and thus significance there is not informative (just shows the experimental design worked, which we assessed earlier)
+filtered_data <- filtered_data%>%
+  dplyr::mutate(
+    sig_diff = case_when(
+      Experiment_type == "single_addition" & 
+        Species %in% add_species & 
+        Species != Experimental_species ~ NA_real_,
+      TRUE ~ sig_diff
+    )
+  )
+
+
+#title = "Heatmap of mean shifts across single exclusions/additions and Species",
+#x = "Key Species",
+#y = "Species",
+
+ggplot(filtered_data, aes(x = Condition, y = Species, fill = Shift)) + 
+  geom_tile() +
+  geom_text(aes(label = ifelse(sig_diff, "*", "")),  # Add '*' to significant cells
+            color = "black", size = 4, vjust = 0.5, hjust = 0.5) +  
+  theme(axis.text.x = element_text(angle = 70, hjust = 1)) +
+  labs(fill = "Shift") +
+  scale_fill_gradientn(colors = color_gradient,
+                       values = rescaled_breakpoints,  
+                       na.value = "transparent",
+                       guide = guide_colourbar(ticks = TRUE, nbin = 50, barwidth = 0.5, 
+                                               barheight = 12, label.hjust = 0.5, label.vjust = 0.5, 
+                                               label.theme = element_text(size = 14, angle = 0,   
+                                                                          hjust = 0.5, vjust = 0.5), 
+                                               title.theme = element_text(size = 12, angle = 0, 
+                                                                          hjust = 0.5, vjust = 0.5, 
+                                                                          face = "bold"))) +
+  facet_wrap(~ Medium, scales = "free_x")
+
+
+#Count the cells per medium to get an idea of the number of hits relative to the total number of combinations:
+unique_cell_counts <- filtered_data %>%
+  dplyr::filter(df > 2) %>% 
+  dplyr::distinct(Species, Medium, Condition, Experiment_type, .keep_all = TRUE) %>%
+  dplyr::count(Medium) 
+
+print(unique_cell_counts)
+
+
+###Alpha diversity & impact of single exclusions/ exclusions
+head(TrA2_relative_abundance_table_T)
+
+# Exclude rows where Medium is NA in transposed_single_exclusions_1
+TrA2_relative_abundance_table_T <- subset(TrA2_relative_abundance_table_T, !is.na(Medium))
+
+transposed_single_exclusions_Medium3 <- subset(TrA2_relative_abundance_table_T, Medium == 3 & Experiment_type == "single_exclusion")
+transposed_single_exclusions_Medium8 <- subset(TrA2_relative_abundance_table_T, Medium == 8 & Experiment_type == "single_exclusion")
+transposed_single_additions_Medium3 <- subset(TrA2_relative_abundance_table_T, Medium == 3 & Experiment_type == "single_addition")
+transposed_single_additions_Medium8 <- subset(TrA2_relative_abundance_table_T, Medium == 8 & Experiment_type == "single_addition")
+
+
+##Now, we plot:
+# Calculate mean and standard deviation for "All"
+
+all_mean_sd_1 <- transposed_single_exclusions_Medium3 %>%
+  filter(Condition == "- All") %>%
+  ungroup() %>%  # Ensure there's no grouping
+  summarise(mean_alpha_div = mean(Alpha_diversity),
+            sd_alpha_div = sd(Alpha_diversity))
+
+all_mean_sd_2 <- transposed_single_exclusions_Medium8 %>%
+  filter(Condition == "- All") %>%
+  ungroup() %>%  # Ensure there's no grouping
+  summarise(mean_alpha_div = mean(Alpha_diversity),
+            sd_alpha_div = sd(Alpha_diversity))
+
+all_mean_sd_3 <- transposed_single_additions_Medium3 %>%
+  filter(Condition == "+ All") %>%
+  ungroup() %>%  # Ensure there's no grouping
+  summarise(mean_alpha_div = mean(Alpha_diversity),
+            sd_alpha_div = sd(Alpha_diversity))
+
+all_mean_sd_4 <- transposed_single_additions_Medium8 %>%
+  filter(Condition == "+ All") %>%
+  ungroup() %>%  # Ensure there's no grouping
+  summarise(mean_alpha_div = mean(Alpha_diversity),
+            sd_alpha_div = sd(Alpha_diversity))
+
+
+#Create Plots, and exclude 'All' from y-axis (as this condition is used for creating an area in the plot of variation in the All-condition for alpha div)
+transposed_single_exclusions_Medium3 <- filter(transposed_single_exclusions_Medium3, Condition != "- All")
+transposed_single_exclusions_Medium8 <- filter(transposed_single_exclusions_Medium8, Condition != "- All")
+transposed_single_additions_Medium3 <- filter(transposed_single_additions_Medium3, Condition != "+ All")
+transposed_single_additions_Medium8 <- filter(transposed_single_additions_Medium8, Condition != "+ All")
+
+#Highlighting species that have a relative abundance in the respective 'All' conditions of less than 0.5% (average)
+highlight_species_plot1 <- c("- R. gnavus", "- C. saccharolyticum", "- B. thetaiotaomicron", "- B. hansenii", "- B. fragilis", "- B. adolescentis", "- C. bolteae")
+highlight_species_plot2 <- c("- C. saccharolyticum", "- B. adolescentis", "- E. lenta")
+highlight_species_plot3 <- c("+ S. parasanguinis", "+ P. distasonis", "+ L. plantarum", "+ E. eligens", "+ C. perfringens", "+ B. eggerthii", "+ B. dorei", "+ B. clarus", "+ R. hominis", "+ S. parasanguinis", "+ C. aerofaciens")
+highlight_species_plot4 <- c("+ S. parasanguinis", "+ P. distasonis", "+ L. plantarum", "+ D. formicigenerans", "+ E. eligens", "+ C. perfringens", "+ B. eggerthii", "+ B. clarus", "+ R. hominis", "+ C. aerofaciens")
+
+
+transposed_single_exclusions_Medium3$color <- ifelse(transposed_single_exclusions_Medium3$Condition %in% highlight_species_plot1, "red2", "black")
+transposed_single_exclusions_Medium8$color <- ifelse(transposed_single_exclusions_Medium8$Condition %in% highlight_species_plot2, "red2", "black")
+transposed_single_additions_Medium3$color <- ifelse(transposed_single_additions_Medium3$Condition %in% highlight_species_plot3, "red2", "black")
+transposed_single_additions_Medium8$color <- ifelse(transposed_single_additions_Medium8$Condition %in% highlight_species_plot4, "red2", "black")
+
+
+plot1 <- ggplot(subset(transposed_single_exclusions_Medium3, Condition != "- L. paracasei" & Condition != "- C. ramosum" & Condition != "- C. comes"), aes(x = Alpha_diversity, y = Condition, color = color)) +
+  geom_vline(aes(xintercept = all_mean_sd_1$mean_alpha_div), color = "slategray", alpha = 0.5) +
+  geom_vline(aes(xintercept = all_mean_sd_1$mean_alpha_div - all_mean_sd_1$sd_alpha_div), linetype = "dashed", color = "slategray", alpha = 0.5) +
+  geom_vline(aes(xintercept = all_mean_sd_1$mean_alpha_div + all_mean_sd_1$sd_alpha_div), linetype = "dashed", color = "slategray", alpha = 0.5) +
+  geom_point(size = 2, alpha = 0.5) +
+  scale_color_identity() +
+  annotate("rect", xmin = all_mean_sd_1$mean_alpha_div - all_mean_sd_1$sd_alpha_div,
+           xmax = all_mean_sd_1$mean_alpha_div + all_mean_sd_1$sd_alpha_div,
+           ymin = -Inf, ymax = Inf, fill = "slategray", alpha = 0.1) +
+  theme_minimal() +  
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    axis.line = element_line(color = "black"),
+    axis.ticks = element_line(color = "black")
+  ) +
+  xlim(1.35, 1.85) + 
+  labs(title = "M3: Exclusions",
+       x = "Shannon alpha diversity", y = "Singly excluded species") 
+plot1
+
+plot2 <- ggplot(subset(transposed_single_exclusions_Medium8, Condition != "- E. coli IAI1"& Condition != "- L. paracasei" & Condition != "- C. ramosum" & Condition != "- C. comes"), aes(x = Alpha_diversity, y = Condition, color = color)) +
+  geom_vline(aes(xintercept = all_mean_sd_2$mean_alpha_div), color = "slategray", alpha = 0.5) +
+  geom_vline(aes(xintercept = all_mean_sd_2$mean_alpha_div - all_mean_sd_2$sd_alpha_div), linetype = "dashed", color = "slategray", alpha = 0.5) +
+  geom_vline(aes(xintercept = all_mean_sd_2$mean_alpha_div + all_mean_sd_2$sd_alpha_div), linetype = "dashed", color = "slategray", alpha = 0.5) +
+  geom_point(size = 2, alpha = 0.5) +
+  scale_color_identity() +
+  annotate("rect", xmin = all_mean_sd_2$mean_alpha_div - all_mean_sd_2$sd_alpha_div,
+           xmax = all_mean_sd_2$mean_alpha_div + all_mean_sd_2$sd_alpha_div,
+           ymin = -Inf, ymax = Inf, fill = "slategray", alpha = 0.1) +
+  theme_minimal() +  
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    axis.line = element_line(color = "black"),
+    axis.ticks = element_line(color = "black")
+  ) +
+  xlim(2, 2.35) + 
+  labs(title = "M8: Exclusions",
+       x = "Shannon alpha diversity", y = "Singly excluded species") 
+plot2
+
+plot3 <- ggplot(transposed_single_additions_Medium3, aes(x = Alpha_diversity, y = Condition, color = color)) +
+  geom_vline(aes(xintercept = all_mean_sd_3$mean_alpha_div), color = "slategrey", alpha = 0.5) +
+  geom_vline(aes(xintercept = all_mean_sd_3$mean_alpha_div - all_mean_sd_3$sd_alpha_div), linetype = "dashed", color = "slategray", alpha = 0.5) +
+  geom_vline(aes(xintercept = all_mean_sd_3$mean_alpha_div + all_mean_sd_3$sd_alpha_div), linetype = "dashed", color = "slategray", alpha = 0.5) +
+  geom_point(size = 2, alpha = 0.5) +
+  scale_color_identity() +
+  annotate("rect", xmin = all_mean_sd_3$mean_alpha_div - all_mean_sd_3$sd_alpha_div,
+           xmax = all_mean_sd_3$mean_alpha_div + all_mean_sd_3$sd_alpha_div,
+           ymin = -Inf, ymax = Inf, fill = "slategray", alpha = 0.1) +
+  theme_minimal() + 
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    axis.line = element_line(color = "black"),
+    axis.ticks = element_line(color = "black")
+  ) +
+  xlim(1.35, 1.85) + 
+  labs(title = "M3: Additions",
+       x = "Shannon alpha diversity", y = "Singly added species") 
+plot3
+
+plot4 <- ggplot(transposed_single_additions_Medium8, aes(x = Alpha_diversity, y = Condition, color = color)) +
+  geom_vline(aes(xintercept = all_mean_sd_4$mean_alpha_div), color = "slategray", alpha = 0.5) +
+  geom_vline(aes(xintercept = all_mean_sd_4$mean_alpha_div - all_mean_sd_4$sd_alpha_div), linetype = "dashed", color = "slategray", alpha = 0.5) +
+  geom_vline(aes(xintercept = all_mean_sd_4$mean_alpha_div + all_mean_sd_4$sd_alpha_div), linetype = "dashed", color = "slategray", alpha = 0.5) +
+  geom_point(size =2, alpha = 0.5) +
+  scale_color_identity() +
+  annotate("rect", xmin = all_mean_sd_4$mean_alpha_div - all_mean_sd_4$sd_alpha_div,
+           xmax = all_mean_sd_4$mean_alpha_div + all_mean_sd_4$sd_alpha_div,
+           ymin = -Inf, ymax = Inf, fill = "slategray", alpha = 0.1) +
+  theme_minimal() +  
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    axis.line = element_line(color = "black"),
+    axis.ticks = element_line(color = "black")
+  ) +
+  xlim(2, 2.35) + 
+  labs(title = "M8: Additions",
+       x = "Shannon alpha diversity", y = "Singly added species") 
+plot4
+
+
+#Display plots
+plot1
+plot2
+plot3
+plot4
+
+library(gridExtra)
+grid.arrange(plot1, plot2, plot3, plot4, ncol=2)
