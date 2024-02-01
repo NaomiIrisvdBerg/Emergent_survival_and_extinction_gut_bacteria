@@ -1,0 +1,2511 @@
+#R Script for TrA1 (core experiment) data analysis
+
+# Load necessary libraries:
+# List of required packages
+required_packages <- c(
+  "ggplot2",
+  "readr",
+  "RcmdrMisc",
+  "Hmisc",
+  "multtest",
+  "reshape2",
+  "dplyr",
+  "tidyr",
+  "vegan",
+  "igraph",
+  "readxl",
+  "tidyverse",
+  "fontfamily",
+  "scales",
+  "ggsignif",
+  "ggpubr",
+  "edgeR",
+  "stringr",
+  "EnhancedVolcano",
+  "data.table",
+  "purrr",
+  "gridExtra"
+)
+
+# Install and load required packages
+for (package in required_packages) {
+  if (!requireNamespace(package, quietly = TRUE)) {
+    install.packages(package, dependencies = TRUE)
+  }
+  library(package, character.only = TRUE)
+}
+
+
+
+## Radial stacked plot on normalised medium composition, in order of total sum across component classes
+## Plotted by Medium and coloured by Medium component classes
+
+## Load in required dataframe: Compounds_Tramontano.csv, adopted from Tramontano et al. 2018
+
+#First, load in unnormalised dataframe
+Compounds_Tramontano <- read_csv("Documents/Compounds_Tramontano.csv")
+#View(Compounds_Tramontano)
+#Then, add 0 for NAs
+Compounds_Tramontano[is.na(Compounds_Tramontano)] <- "0 mg"
+
+convert_units <- function(x) {
+  # Handle NA and non-character inputs
+  if (is.na(x) || !is.character(x)) {
+    return(NA_real_)
+  }
+  
+  # Define regex patterns for numeric values and units
+  numeric_pattern <- "[0-9.]+"
+  unit_pattern <- "ug|µg|mg|g|mL"
+  
+  # Extract the numeric part and the unit part
+  numeric_part <- as.numeric(str_extract(x, numeric_pattern))
+  unit_part <- str_extract(x, unit_pattern)
+  
+  # If the numeric part extraction fails, return NA
+  if (is.na(numeric_part)) {
+    return(NA_real_)
+  }
+  
+  # Perform conversion based on the unit part
+  if (!is.na(unit_part)) {
+    switch(unit_part,
+           "g" = numeric_part * 1000,
+           "ug" = numeric_part / 1000,
+           "µg" = numeric_part / 1000,
+           "mg" = numeric_part,
+           "mL" = numeric_part,
+           numeric_part  # default case
+    )
+  } else {
+    # If the unit part extraction fails, return NA
+    return(NA_real_)
+  }
+}
+
+#Apply the conversion function to each column that starts with "M"
+Compounds_Tramontano1 <- Compounds_Tramontano %>%
+  rowwise() %>%
+  dplyr::mutate(across(starts_with("M"), ~ convert_units(.x))) %>%
+  ungroup()
+
+#Replace NAs with zeros if necessary
+Compounds_Tramontano1 <- Compounds_Tramontano1 %>%
+  dplyr::mutate(across(starts_with("M"), ~ if_else(is.na(.x), 0, .x)))
+
+#Check the structure to confirm the transformation
+str(Compounds_Tramontano1)
+
+#Normalise each value against maximum of each row
+Compounds_Tramontano2 <- Compounds_Tramontano1 %>%
+  dplyr::rowwise() %>%
+  dplyr::mutate(across(starts_with("M"), ~ .x / max(c_across(starts_with("M")), na.rm = TRUE))) %>%
+  ungroup()
+
+head(Compounds_Tramontano2)
+
+#Exclude buffer compounds
+Compounds_Tramontano3 <- Compounds_Tramontano2[c(1:88),]
+
+##Make mucin its own class
+Compounds_Tramontano3$Class <- ifelse(Compounds_Tramontano3$Compound == "Mucin", "Mucin", Compounds_Tramontano3$Class)
+
+#Calculate the sum of all 'M' columns for each unique class
+Normalised_medium_components_summed_per_class <- Compounds_Tramontano3 %>%
+  dplyr::group_by(Class) %>%
+  dplyr::summarise(across(starts_with("M"), sum, na.rm = TRUE)) %>%
+  ungroup()
+
+head(Normalised_medium_components_summed_per_class)
+
+#Divide by largest concentration per class:
+Normalised_medium_components_summed_per_class1 <- Normalised_medium_components_summed_per_class %>%
+  dplyr::rowwise() %>% 
+  dplyr::mutate(max_value = max(c_across(starts_with('M')), na.rm = TRUE)) %>%
+  dplyr::mutate(across(starts_with('M'), ~ ./max_value)) %>%
+  select(-max_value) %>%
+  dplyr::ungroup()
+
+#Check the resulting dataframe
+print(Normalised_medium_components_summed_per_class1)
+
+#Rename nucleotids to nucleotides
+Normalised_medium_components_summed_per_class1 <- Normalised_medium_components_summed_per_class1 %>%
+  dplyr::mutate(Class = ifelse(Class == "Nucleotids", "Nucleotides", Class))
+
+color_scheme <- c("dodgerblue3", "#EF7A6C",  "lightskyblue","darkolivegreen1", "#C8A2C8", "ivory2", "darkturquoise", "goldenrod1")
+
+#color_scheme <- c("royalblue2","#EF7A6C","ivory2", "darkolivegreen2","#C8A2C8",  "forestgreen", "darkturquoise", "goldenrod1")
+
+#Pivot to longer format
+Normalised_medium_components_summed_per_class_long <- Normalised_medium_components_summed_per_class1 %>%
+  pivot_longer(
+    cols = starts_with("M"), 
+    names_to = "Medium", 
+    values_to = "Value"
+  )
+
+#Ordered by total sum across component classes
+ordered_medium <- rev(c("M8", "M9", "M3", "M11", "M4", "M7", "M10", "M5", "M2", "M1", "M14", "M16", "M13", "M15B"))
+
+#Assign new variable 'Order' based on order defined above
+Normalised_medium_components_summed_per_class_long$Order <- factor(Normalised_medium_components_summed_per_class_long$Medium, levels = ordered_medium)
+
+stacked_radial_plot_medium_components <- ggplot(Normalised_medium_components_summed_per_class_long, aes(x = Order, y = Value, fill = Class)) +
+  geom_bar(stat = "identity", position = "stack", alpha = 0.8, width = 1) +
+  scale_x_discrete(labels = ordered_medium) +  
+  scale_fill_manual(values = color_scheme) +
+  coord_polar() +
+  theme_void() +
+  labs(fill = "Component") +
+  theme(
+    axis.text.x = element_text(angle = 30, hjust = 1),
+    legend.text = element_text(size = 12)  
+  )
+
+stacked_radial_plot_medium_components
+
+
+
+###TrA1: Core Experiment analysis
+TrA1_relative_abundance <- read_delim("Downloads/TrA1_relative_abundance.txt", 
+                                      delim = "\t", escape_double = FALSE, 
+                                      trim_ws = TRUE)
+#View(TrA1_relative_abundance)
+
+##46 sequences in ref —> 34 in final new ref clean (due to indistinct 16S sequences)
+#NT5077 represents following strains: NT12097, NT12192, NT12193, NT12194, NT12195, NT5077, NT5078, NT7160, YK0003
+#NT5003 represents NT5003 and NT5033
+#NT5043 represents NT5043 and NT5044
+#YK0005 represents YK0005 and YK0004
+#YK0007 represents YK0007 and YK0006
+
+
+TrA1_relative_abundance_table <- TrA1_relative_abundance
+
+#Bacteroides fragilis (S2) nontoxigenic DSM No.: 2151 & Bacteroides fragilis (S2) enterotoxigenic (S2) ATCC No: 43860
+TrA1_relative_abundance_table <- TrA1_relative_abundance_table %>%
+  mutate(
+    nid = ifelse(nid == 'NT5003', 'NT5003/NT5033', nid)
+  )
+
+#Bifidobacterium animalis subsp. lactis BL-04 (S1) DGCC2908 & Bifidobacterium animalis subsp. lactis BI-07 (S1)
+TrA1_relative_abundance_table <- TrA1_relative_abundance_table %>%
+  mutate(
+    nid = ifelse(nid == 'NT5043', 'NT5043/NT5044', nid)
+  )
+#Escherichia coli IAI1 & Escherichia coli ED1a & Escherichia coli HM605 & Escherichia coli UTI89 & Escherichia coli H10407 ATCC 35401 
+#& Escherichia coli CFT073 ATCC 700928 & Escherichia coli E2348/69 & Shigella sonnei 53G & Shigella flexneri 
+TrA1_relative_abundance_table <- TrA1_relative_abundance_table %>%
+  mutate(
+    nid = ifelse(nid == 'NT5077', 'NT12097/NT12193/NT12194/NT12195/NT5077/NT5078/NT7160/YK0003', nid)
+  )
+
+TrA1_relative_abundance_table <- TrA1_relative_abundance_table %>%
+  mutate(
+    Name = ifelse(Name == 'X94967.1 R.gnavus 16S ribosomal RNA', 'R. gnavus', Name)
+  )
+#S. typhimurium LT2 & S. typhimurium ATCC14028
+TrA1_relative_abundance_table <- TrA1_relative_abundance_table %>%
+  mutate(
+    Name = ifelse(Name == 'S. typhimurium LT2 spp', 'S. typhimurium spp', Name),
+    nid = ifelse(nid == 'YK0005', 'YK0004/YK0005', nid)
+  )
+# V. cholerae A1552 & V. cholerae N16961
+TrA1_relative_abundance_table <- TrA1_relative_abundance_table %>%
+  mutate(
+    Name = ifelse(Name == 'V. cholerae N16961 spp', 'V. cholerae spp', Name),
+    nid = ifelse(nid == 'YK0007', 'YK0006/YK0007', nid)
+  )
+
+TrA1_relative_abundance_table <- TrA1_relative_abundance_table %>%
+  mutate(
+    Name = ifelse(Name == 'Actinomyces odontolyticus', 'A. odontolyticus', Name)
+  )
+
+##Now, we prepare TrA1_relative_abundance_table for transposing
+TrA1_relative_abundance_table$Name <- gsub(" ", "_", TrA1_relative_abundance_table$Name)
+TrA1_relative_abundance_table_t<-TrA1_relative_abundance_table[, c(2:309)]
+
+
+#Transpose using tidyr
+
+#First, we pivot the dataframe to long format, excluding the first column ("Name")
+long_format <- pivot_longer(
+  TrA1_relative_abundance_table_t,
+  cols = -Name,
+  names_to = "Code",
+  values_to = "Value"
+)
+
+#Then, pivot the long format dataframe to wide format using "Name" as the new column names
+TrA1_relative_abundance_table_T <- pivot_wider(
+  long_format,
+  names_from = Name,
+  values_from = Value
+)
+
+
+#Then, we calculate Shannon alpha diversity (with handling for division by zero)
+#Convert selected columns to a matrix
+abundance_matrix <- as.matrix(TrA1_relative_abundance_table_T[, 2:35])
+
+TrA1_relative_abundance_table_T$Alpha_diversity <- rowSums(ifelse(abundance_matrix != 0,
+                                                                  abundance_matrix * log(abundance_matrix) * -1,
+                                                                  0))
+
+##Now, we add Transfer, Medium, Mix, pH and Replicate columns based on the metadata in the column: "Code"
+# We use library(dplyr) and library(stringr) here
+TrA1_relative_abundance_table_T <- TrA1_relative_abundance_table_T %>%
+  mutate(
+    Transfer = as.integer(str_extract(Code, "(?<=Transfer)\\d")),
+    Mix = as.integer(str_extract(Code, "(?<=Mix)\\d")), # Captures only the first digit after Mix
+    Medium = as.character(str_extract(Code, "(?<=Med)\\d+B?")),
+    pH = case_when(
+      str_detect(Code, "pH55") ~ 5.5,
+      str_detect(Code, "pH7") ~ 7.0,
+      TRUE ~ NA_real_  
+    ),
+    Replicate = as.integer(substr(Code, nchar(Code), nchar(Code)))
+  )
+
+
+#Next, we create PCAs of the relative abundance data to explore which media produce similar clustering
+# First, split data by pH 
+
+All_mixes_ab<-na.omit(TrA1_relative_abundance_table_T)
+#Also, take out the few samples with medium 15A
+All_mixes_ab <- subset(All_mixes_ab, Medium != 15)
+
+All_mixes_ab_pH5.5<-subset(All_mixes_ab, pH==5.5)
+All_mixes_ab_pH7<-subset(All_mixes_ab, pH==7.0)
+
+Mix2_ab_pH5.5 <- subset(All_mixes_ab, pH==5.5 & Mix == 2)
+Mix2_ab_pH7 <- subset(All_mixes_ab, pH==7 & Mix == 2)
+
+All_mixes_ab_pH5.5_for_PCA <- All_mixes_ab_pH5.5[, c(2:35)]
+All_mixes_ab_pH7_for_PCA <- All_mixes_ab_pH7[, c(2:35)]
+
+Mix2_ab_pH5.5_for_PCA <- Mix2_ab_pH5.5[, c(2:35)]
+Mix2_ab_pH7_for_PCA <- Mix2_ab_pH7[, c(2:35)]
+
+#Remove columns (i.e., species) with exclusively 0 abundance across all combinations of Replicate, Mix, and Medium
+All_mixes_ab_pH5.5_for_PCA <- All_mixes_ab_pH5.5_for_PCA[, colSums(All_mixes_ab_pH5.5_for_PCA) != 0]
+All_mixes_ab_pH7_for_PCA <- All_mixes_ab_pH7_for_PCA[, colSums(All_mixes_ab_pH7_for_PCA) != 0]
+
+Mix2_ab_pH5.5_for_PCA <- Mix2_ab_pH5.5_for_PCA[, colSums(Mix2_ab_pH5.5_for_PCA) != 0]
+Mix2_ab_pH7_for_PCA <- Mix2_ab_pH7_for_PCA[, colSums(Mix2_ab_pH7_for_PCA) != 0]
+
+#Calculate PCAs
+All_mixes_ab_pH5.5_PCA <- prcomp(All_mixes_ab_pH5.5_for_PCA, center = TRUE)
+All_mixes_ab_pH7_PCA <- prcomp(All_mixes_ab_pH7_for_PCA, center = TRUE)
+
+Mix2_ab_pH5.5_PCA <- prcomp(Mix2_ab_pH5.5_for_PCA, center = TRUE)
+Mix2_ab_pH7_PCA <- prcomp(Mix2_ab_pH7_for_PCA, center = TRUE)
+
+#Visualise PCA for pH 5.5
+#Scale PCA first
+var_explained <- All_mixes_ab_pH5.5_PCA$sdev^2 / sum(All_mixes_ab_pH5.5_PCA$sdev^2)
+aspect_ratio <- var_explained[2] / var_explained[1]
+
+g<-ggbiplot(All_mixes_ab_pH5.5_PCA, var.axes = FALSE, choice=c(1,2))
+g1<-g+geom_point(aes(shape=as.factor(All_mixes_ab_pH5.5$Mix),colour = as.factor(All_mixes_ab_pH5.5$Medium), size=as.numeric(All_mixes_ab_pH5.5$Alpha_diversity)), stroke=1.3) + theme_bw()
+g1 +  scale_color_manual(values=c("#00AFBB", "#2e37fe", "darkorchid1", "#0072B2","indianred", "gold1","firebrick4", "springgreen3",  "chocolate1","#6C0BA9", "red", "#999999", "magenta"), name="Medium") +
+  scale_shape_manual(values = c(0, 1, 2), name = "Mix") +
+  scale_size(name = "Alpha Diversity", limits = c(min(All_mixes_ab$Alpha_diversity),
+                                                  max(All_mixes_ab$Alpha_diversity))) +
+  labs(title = "PCA Relative Abundances all mixes
+at pH 5.5, Endpoint Tr. 9 (and 8 for Mix 2)") +
+  coord_fixed(ratio = aspect_ratio)  
+
+
+#Visualise PCA for pH 7,   "PCA Relative Abundances all mixes at pH 7, Endpoint Tr. 9 (and 8 for Mix 2)" 
+#Scale PCA first
+var_explained <- All_mixes_ab_pH7_PCA$sdev^2 / sum(All_mixes_ab_pH7_PCA$sdev^2)
+aspect_ratio <- var_explained[2] / var_explained[1]
+
+
+g<-ggbiplot(All_mixes_ab_pH7_PCA, var.axes = FALSE, choice=c(1,2))
+g1<-g+geom_point(aes(shape=as.factor(All_mixes_ab_pH7$Mix),colour = as.factor(All_mixes_ab_pH7$Medium), size=as.numeric(All_mixes_ab_pH7$Alpha_diversity)), stroke=1.3) + theme_bw()
+g1 +  scale_color_manual(values=c("black", "#00AFBB", "#2e37fe", "darkorchid1", "green", "#0072B2", "indianred","gold1", "firebrick4", "springgreen3",  "chocolate1","#6C0BA9", "red", "#999999", "magenta"), name="Medium") +
+  scale_shape_manual(values = c(0, 1, 2), name = "Mix") +
+  scale_size(name = "Alpha 
+Diversity", limits = c(min(All_mixes_ab$Alpha_diversity),
+                       max(All_mixes_ab$Alpha_diversity))) +
+  guides(color = guide_legend(override.aes = list(size = 5))) +
+  theme(axis.text = element_text(size = 16), 
+        axis.title = element_text(size = 16),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_line()) +
+  coord_fixed(ratio = aspect_ratio)  
+
+#Extract vector loadings:
+View(All_mixes_ab_pH7_PCA[["rotation"]])
+
+
+
+##Inspect inter-transfer variation for Mix 2 (two endpoints; T8 and T9)
+##PCAs with shape as Transfers for Mix 2 (as this is the only Mix with relative abundance data for more than one transfer endpoint)
+var_explained <- Mix2_ab_pH5.5_PCA$sdev^2 / sum(Mix2_ab_pH5.5_PCA$sdev^2)
+aspect_ratio <- var_explained[2] / var_explained[1]
+g<-ggbiplot(Mix2_ab_pH5.5_PCA, var.axes = FALSE, choice=c(1,2))
+g1<-g+geom_point(aes(shape=as.factor(Mix2_ab_pH5.5$Transfer),colour = as.factor(Mix2_ab_pH5.5$Medium), size=as.numeric(Mix2_ab_pH5.5$Alpha_diversity)), stroke=1.3) + theme_bw()
+g1 +  scale_color_manual(values=c("#00AFBB", "#2e37fe", "darkorchid1", "#0072B2", "indianred", "gold1", "firebrick4", "springgreen3",  "chocolate1","#6C0BA9", "red", "#999999", "magenta"), name="Medium") +
+  scale_shape_manual(values = c(0, 1, 2), name = "Transfer") +
+  scale_size(name = "Alpha Diversity", limits = c(min(Mix2_ab_pH5.5$Alpha_diversity),
+                                                  max(Mix2_ab_pH7$Alpha_diversity))) +
+  labs(title = "PCA Relative Abundances Mix 2 pH 5.5, Endpoint Transfer 8 and 9") +
+  theme(axis.text = element_text(size = 16), 
+        axis.title = element_text(size = 16),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_line()) +
+  coord_fixed(ratio = aspect_ratio) 
+
+var_explained <- Mix2_ab_pH7_PCA$sdev^2 / sum(Mix2_ab_pH7_PCA$sdev^2)
+aspect_ratio <- var_explained[2] / var_explained[1]
+g<-ggbiplot(Mix2_ab_pH7_PCA, var.axes = FALSE, choice=c(1,2))
+g1<-g+geom_point(aes(shape=as.factor(Mix2_ab_pH7$Transfer),colour = as.factor(Mix2_ab_pH7$Medium), size=as.numeric(Mix2_ab_pH7$Alpha_diversity)), stroke=1.3) + theme_bw()
+g1 +  scale_color_manual(values=c("black", "#00AFBB", "#2e37fe", "darkorchid1", "green", "#0072B2", "indianred", "gold1", "firebrick4", "springgreen3",  "chocolate1","#6C0BA9", "red", "#999999", "magenta"), name="Medium") +
+  scale_shape_manual(values = c(0, 1, 2), name = "Transfer") +
+  scale_size(name = "Alpha Diversity", limits = c(min(Mix2_ab_pH5.5$Alpha_diversity),
+                                                  max(Mix2_ab_pH7$Alpha_diversity))) +
+  theme(axis.text = element_text(size = 16), 
+        axis.title = element_text(size = 16),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_line()) +
+  labs(title = "PCA Relative Abundances Mix 2 pH 7, Endpoint Transfer 8 and 9") +
+  coord_fixed(ratio = aspect_ratio) 
+
+
+
+
+
+#Plotting pH 5.5 survivors: L. paracasei versus L. plantarum
+ggplot(All_mixes_ab, aes(x = L._paracasei, y = L._plantarum, shape = as.factor(pH), colour = Medium)) +
+  geom_point(size = 3, alpha = 0.6, stroke = 2) +
+  theme_minimal() +
+  labs(title = "Scatterplot of L. paracasei vs L. plantarum",
+       x = "Relative abundance of L. paracasei",
+       y = "Relative abundance of L. plantarum") +
+  scale_color_manual(values=c("black", "#00AFBB", "#2e37fe", "darkorchid1", "green", "#0072B2", "indianred","gold1", "firebrick4", "springgreen3",  "chocolate1","#6C0BA9", "red", "#999999", "magenta"), name="Medium") +
+  scale_shape_manual(values = c("5.5" = 1, "7" = 2), name = "pH") + 
+  theme(axis.title.x=element_text(size=14), 
+        axis.title.y=element_text(size=14), 
+        axis.text.x=element_text(size=12),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_line(),
+        axis.text.y=element_text(size=12))
+
+
+
+#correlations between the two bugs
+cor.test(All_mixes_ab_pH5.5$L._paracasei, All_mixes_ab_pH5.5$L._plantarum, method = "pearson")
+cor.test(All_mixes_ab_pH5.5$L._paracasei, All_mixes_ab_pH5.5$L._plantarum, method = "kendall")
+
+#regression
+model <- lm(L._paracasei ~ L._plantarum, data = All_mixes_ab_pH5.5)
+summary(model)
+
+
+
+
+### Chemical composition dissimilarity versus relative abundance profile dissimilarity: per growth medium
+###Generate geometric medians: does distance between media in composition relate strongly to their distance in abundance profiles?
+## We do this for relative abundance profiles for pH7
+## We generate distance matrices for relative abundances per Mix
+#First; we need to generate a distance matrix for medium composition
+
+
+#Exclude buffer compounds:
+#Alternatively: use Compounds_Tramontano1 for non-normalised but unit-controlled values
+Medium_composition_complete <- Compounds_Tramontano2[c(1:88),]
+
+#Transpose so we have a column for "Medium", using 'gather' function from tidyr and dplyr packages
+Medium_composition_complete_t <- Medium_composition_complete[, c(2:16)]
+
+Medium_composition_complete_T <- Medium_composition_complete_t %>%
+  pivot_longer(cols = -Compound, names_to = "Medium", values_to = "Value") %>%
+  pivot_wider(names_from = Compound, values_from = Value)
+
+##Rename Medium so it matches value assignment of relative abundance data:
+Medium_composition_complete_T$Medium <- sub("M", "", Medium_composition_complete_T$Medium)
+
+# Compute the distance matrix using Euclidean method
+medium_distance_matrix <- as.matrix(dist(Medium_composition_complete_T[-1], method = "euclidean")) # -1 to remove the Medium column
+
+# If you want the row and column names of the matrix to be the medium names:
+rownames(medium_distance_matrix) <- Medium_composition_complete_T$Medium
+colnames(medium_distance_matrix) <- Medium_composition_complete_T$Medium
+
+# Now, you can view the distance matrix
+print(medium_distance_matrix)
+
+##Now, we want to do the same for the relative abundance profiles, but we will separate out by mix first
+
+Medium_rel_ab_complete <- All_mixes_ab
+Medium_rel_ab_Mix1 <-subset(Medium_rel_ab_complete, Mix ==1 & pH == 7 & Transfer == 9)
+Medium_rel_ab_Mix2 <-subset(Medium_rel_ab_complete, Mix ==2 & pH == 7 & Transfer == 9)
+Medium_rel_ab_Mix3 <-subset(Medium_rel_ab_complete, Mix ==3 & pH == 7 & Transfer == 9)
+
+Medium_rel_ab_Mix1 <- Medium_rel_ab_Mix1[, c(2:35, 39)]
+Medium_rel_ab_Mix2 <- Medium_rel_ab_Mix2[, c(2:35, 39)]
+Medium_rel_ab_Mix3 <- Medium_rel_ab_Mix3[, c(2:35, 39)]
+
+
+# Group by 'Medium' and calculate mean for each Species, per mix (across media)
+medium_means_Mix1 <- Medium_rel_ab_Mix1 %>%
+  dplyr::group_by(Medium) %>%
+  dplyr::summarise_all(mean)
+
+medium_means_Mix2 <- Medium_rel_ab_Mix2 %>%
+  dplyr::group_by(Medium) %>%
+  dplyr::summarise_all(mean)
+
+medium_means_Mix3 <- Medium_rel_ab_Mix3 %>%
+  dplyr::group_by(Medium) %>%
+  dplyr::summarise_all(mean)
+
+
+# Compute the distance matrix using Bray-Curtis method, vegan package
+medium_distance_matrix_Mix1 <- as.matrix(vegdist(medium_means_Mix1[-1], method = "bray"))
+medium_distance_matrix_Mix2 <- as.matrix(vegdist(medium_means_Mix2[-1], method = "bray"))
+medium_distance_matrix_Mix3 <- as.matrix(vegdist(medium_means_Mix3[-1], method = "bray"))
+
+# If you want the row and column names of the matrix to be the medium names:
+rownames(medium_distance_matrix_Mix1) <- medium_means_Mix1$Medium
+colnames(medium_distance_matrix_Mix1) <- medium_means_Mix1$Medium
+
+rownames(medium_distance_matrix_Mix2) <- medium_means_Mix2$Medium
+colnames(medium_distance_matrix_Mix2) <- medium_means_Mix2$Medium
+
+rownames(medium_distance_matrix_Mix3) <- medium_means_Mix3$Medium
+colnames(medium_distance_matrix_Mix3) <- medium_means_Mix3$Medium
+
+# Now, you can view the distance matrix
+print(medium_distance_matrix_Mix1)
+print(medium_distance_matrix_Mix2)
+print(medium_distance_matrix_Mix3)
+
+
+##Make heatmaps
+
+matrix_data <- as.matrix(medium_distance_matrix)
+melted_data <- melt(matrix_data)
+
+desired_order <- c("15B", "13", "16", "14", "1", "2", "5", "10", 
+                   "7", "4", "11", "3", "9", "8")
+
+# Convert the order to a factor with specified levels
+factor_order <- factor(rownames(matrix_data), levels = desired_order)
+
+# Order the matrix rows/columns by this factor
+ordered_matrix <- matrix_data[order(factor_order), order(factor_order)]
+
+# Melt the reordered matrix
+melted_data <- melt(ordered_matrix)
+
+# Plot using ggplot
+ggplot(melted_data, aes(x=Var1, y=Var2)) +
+  geom_tile(aes(fill=value), color="white") +
+  scale_fill_viridis_c() +  
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank()) +
+  labs(fill="Distance")
+
+
+
+
+###Mix 1
+matrix_data <- as.matrix(medium_distance_matrix_Mix1)
+melted_data <- melt(matrix_data)
+
+desired_order <- c("15B", "13", "16", "14", "1", "2", "5", "10", 
+                   "7", "4", "11", "3", "9", "8")
+
+# Convert the order to a factor with specified levels
+factor_order <- factor(rownames(matrix_data), levels = desired_order)
+
+# Order the matrix rows/columns by this factor
+ordered_matrix <- matrix_data[order(factor_order), order(factor_order)]
+
+# Melt the reordered matrix
+melted_data <- melt(ordered_matrix)
+
+# Plot using ggplot
+ggplot(melted_data, aes(x=Var1, y=Var2)) +
+  geom_tile(aes(fill=value), color="white") +
+  scale_fill_viridis_c() +  
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank()) +
+  labs(fill="Distance")
+
+
+
+
+###Mix 2
+matrix_data <- as.matrix(medium_distance_matrix_Mix2)
+melted_data <- melt(matrix_data)
+
+desired_order <- c("15B", "13", "16", "14", "1", "2", "5", "10", 
+                   "7", "4", "11", "3", "9", "8")
+
+# Convert the order to a factor with specified levels
+factor_order <- factor(rownames(matrix_data), levels = desired_order)
+
+# Order the matrix rows/columns by this factor
+ordered_matrix <- matrix_data[order(factor_order), order(factor_order)]
+
+# Melt the reordered matrix
+melted_data <- melt(ordered_matrix)
+
+# Plot using ggplot
+ggplot(melted_data, aes(x=Var1, y=Var2)) +
+  geom_tile(aes(fill=value), color="white") +
+  scale_fill_viridis_c() +  
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank()) +
+  labs(fill="Distance")
+
+
+###Mix 3
+matrix_data <- as.matrix(medium_distance_matrix_Mix3)
+melted_data <- melt(matrix_data)
+
+desired_order <- c("15B", "13", "16", "14", "1", "2", "5", "10", 
+                   "7", "4", "11", "3", "9", "8")
+
+#Convert the order to a factor with specified levels
+factor_order <- factor(rownames(matrix_data), levels = desired_order)
+
+#Order the matrix rows/columns by this factor
+ordered_matrix <- matrix_data[order(factor_order), order(factor_order)]
+
+#melt the reordered matrix
+melted_data <- melt(ordered_matrix)
+
+#Plot using ggplot
+ggplot(melted_data, aes(x=Var1, y=Var2)) +
+  geom_tile(aes(fill=value), color="white") +
+  scale_fill_viridis_c() +  
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank()) +
+  labs(fill="Distance")
+
+
+
+# Plot it all in one plot
+normalize_matrix <- function(mat) {
+  mat / max(mat)
+}
+
+medium_chemical_distance_matrix_normalized <- normalize_matrix(medium_distance_matrix)
+medium_distance_matrix_Mix1_normalized <- normalize_matrix(medium_distance_matrix_Mix1)
+medium_distance_matrix_Mix2_normalized <- normalize_matrix(medium_distance_matrix_Mix2)
+medium_distance_matrix_Mix3_normalized <- normalize_matrix(medium_distance_matrix_Mix3)
+
+#reshape into long format
+df_original <- melt(medium_chemical_distance_matrix_normalized)
+colnames(df_original) <- c("Var1", "Var2", "Original")
+
+df_mix1 <- melt(medium_distance_matrix_Mix1_normalized)
+df_mix1$Inoculation <- "Mix1"
+
+df_mix2 <- melt(medium_distance_matrix_Mix2_normalized)
+df_mix2$Inoculation <- "Mix2"
+
+df_mix3 <- melt(medium_distance_matrix_Mix3_normalized)
+df_mix3$Inoculation <- "Mix3"
+
+# Add the normalised medium composition distances to each of the melted mix dataframes
+df_mix1a <- merge(df_mix1, df_original[, c("Var1", "Var2", "Original")], by = c("Var1", "Var2"))
+df_mix2a <- merge(df_mix2, df_original[, c("Var1", "Var2", "Original")], by = c("Var1", "Var2"))
+df_mix3a <- merge(df_mix3, df_original[, c("Var1", "Var2", "Original")], by = c("Var1", "Var2"))
+
+df_combined <- rbind(df_mix1a, df_mix2a, df_mix3a)
+
+
+#Now, we want to correlate the chemical richness distance matrix with the relative abundance matrix, per mix
+#We will use a Mantel test
+#library(vegan)
+#order first so both are ordered by media in the same way 
+medium_distance_matrix_Mix1_normalized_ordered <- medium_distance_matrix_Mix1_normalized[match(rownames(medium_chemical_distance_matrix_normalized), rownames(medium_distance_matrix_Mix1_normalized)), match(colnames(medium_chemical_distance_matrix_normalized), colnames(medium_distance_matrix_Mix1_normalized))]
+mantel_result_Mix1 <- mantel(medium_chemical_distance_matrix_normalized, medium_distance_matrix_Mix1_normalized_ordered, method = "spearman", permutations = 9999)
+print(mantel_result_Mix1)
+Mix1_rho <- 0.57
+
+medium_distance_matrix_Mix2_normalized_ordered <- medium_distance_matrix_Mix2_normalized[match(rownames(medium_chemical_distance_matrix_normalized), rownames(medium_distance_matrix_Mix2_normalized)), match(colnames(medium_chemical_distance_matrix_normalized), colnames(medium_distance_matrix_Mix2_normalized))]
+mantel_result_Mix2 <- mantel(medium_chemical_distance_matrix_normalized, medium_distance_matrix_Mix2_normalized_ordered, method = "spearman", permutations = 9999)
+print(mantel_result_Mix2)
+Mix2_rho <- 0.30
+
+medium_distance_matrix_Mix3_normalized_ordered <- medium_distance_matrix_Mix3_normalized[match(rownames(medium_chemical_distance_matrix_normalized), rownames(medium_distance_matrix_Mix3_normalized)), match(colnames(medium_chemical_distance_matrix_normalized), colnames(medium_distance_matrix_Mix3_normalized))]
+mantel_result_Mix3 <- mantel(medium_chemical_distance_matrix_normalized, medium_distance_matrix_Mix3_normalized_ordered, method = "spearman", permutations = 9999)
+print(mantel_result_Mix3)
+Mix3_rho <- 0.50
+
+mantel_result_Mix1
+mantel_result_Mix2
+mantel_result_Mix3
+
+#Assign band along the diagonal to emphasise outliers more
+band_width <- 0.2
+
+compute_r2 <- function(df, mix) {
+  model <- lm(value ~ Original, data=df[df$Inoculation == mix, ])
+  return(summary(model)$r.squared)
+}
+
+r2_Mix1 <- compute_r2(df_combined, "Mix1")
+r2_Mix2 <- compute_r2(df_combined, "Mix2")
+r2_Mix3 <- compute_r2(df_combined, "Mix3")
+
+#With stats (where 'Original', i.e., the defined medium composition, is the predictor): 
+compute_stats <- function(df, mix) {
+  model <- lm(value ~ Original, data=df[df$Inoculation == mix, ])
+  model_summary <- summary(model)
+  
+  r2 <- model_summary$r.squared
+  pval <- coef(model_summary)[2,4] 
+  
+  return(list(r2 = r2, pval = pval))
+}
+
+stats_Mix1 <- compute_stats(df_combined, "Mix1")
+stats_Mix2 <- compute_stats(df_combined, "Mix2")
+stats_Mix3 <- compute_stats(df_combined, "Mix3")
+
+r2_Mix1 <- stats_Mix1$r2
+pval_Mix1 <- stats_Mix1$pval
+
+r2_Mix2 <- stats_Mix2$r2
+pval_Mix2 <- stats_Mix2$pval
+
+r2_Mix3 <- stats_Mix3$r2
+pval_Mix3 <- stats_Mix3$pval
+
+cat("Mix1: R2 =", r2_Mix1, "p-value =", pval_Mix1, "\n")
+cat("Mix2: R2 =", r2_Mix2, "p-value =", pval_Mix2, "\n")
+cat("Mix3: R2 =", r2_Mix3, "p-value =", pval_Mix3, "\n")
+
+
+ggplot(df_combined, aes(x=Original, y=value)) +
+  # Shaded band
+  geom_ribbon(aes(ymin = Original - band_width, ymax = Original + band_width), fill = "grey80", alpha = 0.6) +
+  
+  # Points with conditional coloring
+  geom_point(aes(color=ifelse(value < Original + band_width & value > Original - band_width, "Inside Band", Inoculation), shape=Inoculation), size=4, alpha=0.5, stroke = 1.2) +
+  
+  # Diagonal
+  geom_abline(intercept=0, slope=1, color="grey35", linetype="dashed") +
+  
+  # Define custom colors
+  scale_color_manual(values=c("Inside Band" = "grey65", Mix1="grey30", Mix2="grey30", Mix3="grey30"), name = NA) +
+  scale_shape_manual(values=c(Mix1=0, Mix2=1, Mix3=2)) +
+  
+  # Annotate with R^2 values
+  annotate("text", x = 0.03, y = 1.29, size = 4, hjust=0, vjust=1,
+           label = sprintf("'Mix 1: R'^2~'='~%.2f", round(r2_Mix1, 2)), 
+           hjust=0, vjust=1, parse = TRUE) +
+  annotate("text", x = 0.34, y = 1.275, size = 4,
+           label = sprintf("& rho = %s", round(Mix1_rho, 2)), 
+           hjust=0, vjust=1, parse = FALSE) +
+  annotate("text", x = 0.03, y = 1.21, size = 4,
+           label = sprintf("'Mix 2: R'^2~'='~%.2f", round(r2_Mix2, 2)), 
+           hjust=0, vjust=1, parse = TRUE) +
+  annotate("text", x = 0.34, y = 1.195, size = 4,
+           label = sprintf("& rho = %s", round(Mix2_rho, 2)), 
+           hjust=0, vjust=1, parse = FALSE) +
+  annotate("text", x = 0.03, y = 1.13, size = 4, 
+           label = sprintf("'Mix 3: R'^2~'='~%.2f", round(r2_Mix3, 2)), 
+           hjust=0, vjust=1, parse = TRUE) +
+  annotate("text", x = 0.34, y = 1.115, size = 4, 
+           label = sprintf("& rho = %s", round(Mix3_rho, 2)), 
+           hjust=0, vjust=1, parse = FALSE) +
+  # Other settings
+  labs(title="Normalised Medium Composition vs. Normalised Community Composition",
+       x="Normalised Medium Composition 
+       Distance (Euclidean)", 
+       y="Normalised Community Composition 
+       Dissimilarity (Bray-Curtis)") +
+  theme_minimal() +
+  theme(legend.position="bottom",
+        axis.title.x=element_text(size=14), 
+        axis.title.y=element_text(size=14), 
+        axis.text.x=element_text(size=12),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_line(), 
+        axis.text.y=element_text(size=12))
+
+
+
+##Normalised Medium Composition PCA
+
+#Excluding buffer components and transposed (as done earlier):
+Medium_composition_complete_T
+Medium_composition_complete_for_PCA <- Medium_composition_complete_T[,c(2:89)]
+Composition_all_PCA<-prcomp(Medium_composition_complete_for_PCA, center = TRUE)
+
+## Extract averaged shannon alpha diversities per medium for pH 7
+All_mixes_ab_pH7
+
+mean_alpha_diversities_per_medium <- All_mixes_ab_pH7 %>%
+  dplyr::group_by(Medium) %>%
+  dplyr::summarise(Mean_Alpha_div = mean(Alpha_diversity, na.rm = TRUE))
+
+## Merge with the Medium_composition_complete_T dataframe
+Medium_composition_complete_T <- left_join(Medium_composition_complete_T, mean_alpha_diversities_per_medium, by = "Medium")
+
+# Generate the PCA plot
+var_explained <- Composition_all_PCA$sdev^2 / sum(Composition_all_PCA$sdev^2)
+aspect_ratio <- var_explained[2] / var_explained[1]
+g <- ggbiplot(Composition_all_PCA, var.axes = FALSE, choice=c(1,2)) +
+  coord_fixed(ratio = aspect_ratio)  
+g
+
+g1 <- g + geom_point(aes(shape=as.factor(Medium_composition_complete_T$Medium), 
+                         colour = Medium_composition_complete_T$Mean_Alpha_div), 
+                     size = 5, stroke = 1.2)
+g1 + scale_shape_manual(values=c(0, 1, 16, 5, 13, 8, 10, 15, 17, 2, 9,1,12,14)) + 
+  scale_colour_viridis_c(option = "H", 
+                         limits = c(min(Medium_composition_complete_T$Mean_Alpha_div), 
+                                    max(Medium_composition_complete_T$Mean_Alpha_div))) +
+  labs(shape = "Media", color = "Mean Alpha Diversity 
+  across mixes") +
+  theme_bw() +
+  theme(
+    plot.title = element_text(size = 15), 
+    axis.title.x = element_text(size = 14), 
+    axis.title.y = element_text(size = 14), 
+    axis.text.x = element_text(size = 12),  
+    axis.text.y = element_text(size = 12), 
+    panel.grid.major = element_blank(), 
+    panel.grid.minor = element_blank(), 
+    axis.line = element_line(), 
+    legend.text = element_text(size = 12),  
+    legend.title = element_text(size = 14)
+  )
+
+
+##With size as indicator of alpha diversity
+g1 <- g + geom_point(aes(colour=as.factor(Medium_composition_complete_T$Medium), 
+                         size = Medium_composition_complete_T$Mean_Alpha_div), stroke = 1.2, alpha = 0.5)
+
+# Use scale_size_continuous to set the range of sizes:
+g1 <- g1 + scale_size_continuous(range = c(3, 10)) 
+
+# Then add the rest of the layers
+g1 + scale_color_manual(values=c("black", "#00AFBB", "#2e37fe", "darkorchid1", "green", "#0072B2", "indianred","gold1", "firebrick4", "springgreen3",  "chocolate1","#6C0BA9", "red", "#999999", "magenta"), name="Medium") +
+  labs(shape = "Media", color = "Mean Alpha Diversity 
+  across mixes") +
+  theme_bw() +
+  theme(
+    plot.title = element_text(size = 13), 
+    axis.title.x = element_text(size = 12), 
+    axis.title.y = element_text(size = 12),
+    axis.text.x = element_text(size = 10),  
+    axis.text.y = element_text(size = 10),  
+    panel.grid.major = element_blank(), 
+    panel.grid.minor = element_blank(), 
+    axis.line = element_line(), 
+    legend.text = element_text(size = 11),   
+    legend.title = element_text(size = 12)
+  )
+
+
+###Scatterplots for Mean alpha diversity across mixes * monoculture survivor richness and * chemical richness
+#Dataframe with, per medium: above-calculated mean alpha diversity across mixes for TrA1 (pH7), monoculture survivor count & sum of normalised chemical richness
+##Load in monoculture growth results
+monocultures_growth <- read.delim("~/Documents/monocultures_growth.tsv", stringsAsFactors=TRUE)
+
+#Create a dataframe with Medium and corresponding counts of Monoculture Survivorship
+#First, subset only for species with non-zero abundance in inoculum of Mix1
+unique(TrA1_relative_abundance_table_t$Name)
+##Subset first for species present in Mix 1
+monocultures_growth_1<-subset(monocultures_growth, Species !="A. shahii" & Species !="B. caccae" & Species !="B. clarus" & Species !="B. coprocola" & Species != "A. putredinis"
+                              & Species !="A. muciniphila" & Species !="B. dorei" & Species !="B. eggerthii" & Species !="B. fragilis HM-20" &
+                                Species !="B. fragilis HM-709" & Species !="B. fragilis HM-710" & Species !="B. fragilis HM-711"
+                              & Species !="B. fragilis HM-712" & Species !="B. fragilis HM-713" & Species !="B. fragilis HM-714" &
+                                Species != "B. longum subsp. infantis" & Species !="B. obeum" & Species != "B. ovatus" &
+                                Species != "B. stercoris" & Species !="B. uniformis HM-715" & Species != "B. uniformis HM-716" &
+                                Species != "B. vulgatus HM-720" & Species !="B. wadsworthia" & Species != "B. xylanisolvens" &
+                                Species != "C. aerofaciens" & Species != "C. catus" & Species != "C. leptum" & Species != "C. perfringens C36"
+                              & Species != "D. formicigenerans" & Species != "E. eligens" & Species !="E. limosum" & Species != "F. nucleatum subsp. vincentii" &
+                                Species != "L. acidophilus" & Species != "L. delbrueckii subsp. delbrueckii" & Species != "L. fermentum" &
+                                Species != "L. ruminis" & Species != "L. sakei subsp. sakei" & Species !="L. vaginalis" & Species !="O. splanchnicus" & Species !="P. distasonis" &
+                                Species !="P. capillosus" & Species !="P. merdae" & Species !="R. bromii" & Species != "R. hominis" &
+                                Species !="R. intestinalis" & Species !="R. torques" & Species !="S. parasanguinis" & Species !="L. salivarius" &
+                                Species !="V. parvula" & Species !="Y. pseudotuberculosis" &
+                                Media != "WCA" & Media != "15 A" & Media != "BHI++" & Media != "GMM" & Media != "mGAM")
+
+## We perfrom averaging species groups in accordance with species grouping for 16S taxonomy after line 894 
+## Here, we proceed with the species used in the Core experiment as detailed above
+
+
+#Create a vector of unique media values
+unique_media <- unique(monocultures_growth_1$Media)
+
+#Creating a new dataframe to store the results
+Scatterplots1_df <- data.frame(Medium = character(), Monoculture_survivor_richness = integer())
+
+#Loop through each unique medium and count MaxOD > 0 (i.e., monoculture survivor richness)
+for (medium in unique_media) {
+  count_max_od = sum(monocultures_growth_1$MaxOD[monocultures_growth_1$Media == medium] > 0)
+  Scatterplots1_df <- rbind(Scatterplots1_df, data.frame(Medium = medium, Monoculture_survivor_richness = count_max_od))
+}
+
+#Replace "15 B" with "15B" in the Medium column
+Scatterplots1_df$Medium <- gsub("15 B", "15B", Scatterplots1_df$Medium)
+#View(Scatterplots1_df)
+
+##Merge with mean alpha diversity as extracted before:
+Scatterplots1_df_A <- left_join(Scatterplots1_df, mean_alpha_diversities_per_medium, by = "Medium")
+
+
+##Take sum of normalised components using dplyr
+#Create the new column "Chemical_richness"
+Normalised_medium_components_summed_per_class_A  <- Normalised_medium_components_summed_per_class_long %>%
+  dplyr::group_by(Medium) %>%
+  dplyr::summarise(Chemical_richness = sum(Value)) %>%
+  ungroup()
+
+#Remove "M" from all levels in the "Medium" column so it matches with format of Scatterplots1_df_A
+Normalised_medium_components_summed_per_class_A$Medium <- gsub("M", "", Normalised_medium_components_summed_per_class_A$Medium)
+
+
+##Merge with mean alpha diversity and monoculture survivor richness as extracted before:
+Scatterplots1_df_B <- left_join(Scatterplots1_df_A, Normalised_medium_components_summed_per_class_A, by = "Medium")
+
+
+### Relative success analysis TrA1
+###To make relative maxODs for each taxa, we need to average monoculture growth information for each taxa (grouped together species/strains)
+##Grouped together: 
+
+# Make sure Media is a factor with the correct levels
+monocultures_growth_1$Media <- as.factor(monocultures_growth_1$Media)
+
+# Define the species to be averaged
+species_to_average <- c("E. coli E2348/69", "E. coli IAI1", "E. coli ED1a", 
+                        "E. coli UTI89", "E. coli H10407", "E. coli CFT073", 
+                        "E. coli HM605", "S. sonnei", "S. flexneri")
+
+#Filter for the species to average and then calculate the mean for each Media
+averaged_species_data <- monocultures_growth_1 %>%
+  filter(Species %in% species_to_average) %>%
+  dplyr::group_by(Media) %>%
+  dplyr::summarise(MaxOD = mean(MaxOD, na.rm = TRUE),
+                   MaxOD_sd = mean(MaxOD_sd, na.rm = TRUE),
+                   Rate = mean(Rate, na.rm = TRUE),
+                   Rate_sd = mean(Rate_sd, na.rm = TRUE),
+                   .groups = "drop") %>%
+  mutate(Species = "E. coli spp",
+         AUC18 = "averaged", 
+         AUC18_sd = "averaged",
+         Count = "averaged", 
+         Growing = "averaged",
+         Finished = "averaged", 
+         Replicates = "averaged",
+         MaxOD_blank = "averaged", 
+         MaxOD_blank_sd = "averaged")
+
+#Remove the species to be averaged from the original data
+monocultures_growth_1 <- monocultures_growth_1[!monocultures_growth_1$Species %in% species_to_average, ]
+
+#Convert necessary columns to character to match the new averaged data
+monocultures_growth_1 <- monocultures_growth_1 %>%
+  mutate(AUC18 = as.character(AUC18),
+         AUC18_sd = as.character(AUC18_sd),
+         Count = as.character(Count),
+         Growing = as.character(Growing),
+         Finished = as.character(Finished),
+         Replicates = as.character(Replicates),
+         MaxOD_blank = as.character(MaxOD_blank),
+         MaxOD_blank_sd = as.character(MaxOD_blank_sd))
+
+#Combine the original data with the averaged data
+monocultures_growth_1_A <- bind_rows(monocultures_growth_1, averaged_species_data)
+
+
+##Next group to merge: Bifidobacterium animalis subsp. lactis BL-04 (S1) DGCC2908 & Bifidobacterium animalis subsp. lactis BI-07 (S1)
+#Define the species to be averaged
+unique(monocultures_growth_1_A$Species)
+species_to_average <- c("B. animalis subsp. lactis BI-07", "B. animalis subsp. lactis BL-04")
+
+#Filter for the species to average and then calculate the mean for each Media
+averaged_species_data <- monocultures_growth_1_A %>%
+  filter(Species %in% species_to_average) %>%
+  dplyr::group_by(Media) %>%
+  dplyr::summarise(MaxOD = mean(MaxOD, na.rm = TRUE),
+                   MaxOD_sd = mean(MaxOD_sd, na.rm = TRUE),
+                   Rate = mean(Rate, na.rm = TRUE),
+                   Rate_sd = mean(Rate_sd, na.rm = TRUE),
+                   .groups = "drop") %>%
+  mutate(Species = "B. animalis subsp. lactis spp",
+         AUC18 = "averaged", 
+         AUC18_sd = "averaged",
+         Count = "averaged", 
+         Growing = "averaged",
+         Finished = "averaged", 
+         Replicates = "averaged",
+         MaxOD_blank = "averaged", 
+         MaxOD_blank_sd = "averaged")
+
+#Remove the species to be averaged from the original data
+monocultures_growth_1_A <- monocultures_growth_1_A[!monocultures_growth_1_A$Species %in% species_to_average, ]
+
+#Convert necessary columns to character to match the new averaged data
+monocultures_growth_1_A <- monocultures_growth_1_A %>%
+  mutate(AUC18 = as.character(AUC18),
+         AUC18_sd = as.character(AUC18_sd),
+         Count = as.character(Count),
+         Growing = as.character(Growing),
+         Finished = as.character(Finished),
+         Replicates = as.character(Replicates),
+         MaxOD_blank = as.character(MaxOD_blank),
+         MaxOD_blank_sd = as.character(MaxOD_blank_sd))
+
+#Combine the original data with the averaged data
+monocultures_growth_1_B <- bind_rows(monocultures_growth_1_A, averaged_species_data)
+
+#View(monocultures_growth_1_B)
+
+
+
+
+##Next group to merge: S. typhimurium LT2 & S. typhimurium ATCC14028
+# Define the species to be averaged
+unique(monocultures_growth_1_B$Species)
+species_to_average <- c("S. typhimurium LT2", "S. typhimurium ATCC14028")
+
+# Filter for the species to average and then calculate the mean for each Media
+averaged_species_data <- monocultures_growth_1_B %>%
+  filter(Species %in% species_to_average) %>%
+  dplyr::group_by(Media) %>%
+  dplyr::summarise(MaxOD = mean(MaxOD, na.rm = TRUE),
+                   MaxOD_sd = mean(MaxOD_sd, na.rm = TRUE),
+                   Rate = mean(Rate, na.rm = TRUE),
+                   Rate_sd = mean(Rate_sd, na.rm = TRUE),
+                   .groups = "drop") %>%
+  mutate(Species = "S. typhimurium spp",
+         AUC18 = "averaged", 
+         AUC18_sd = "averaged",
+         Count = "averaged", 
+         Growing = "averaged",
+         Finished = "averaged", 
+         Replicates = "averaged",
+         MaxOD_blank = "averaged", 
+         MaxOD_blank_sd = "averaged")
+
+#Remove the species to be averaged from the data
+monocultures_growth_1_B <- monocultures_growth_1_B[!monocultures_growth_1_B$Species %in% species_to_average, ]
+
+#Convert necessary columns to character to match the new averaged data
+monocultures_growth_1_B <- monocultures_growth_1_B %>%
+  mutate(AUC18 = as.character(AUC18),
+         AUC18_sd = as.character(AUC18_sd),
+         Count = as.character(Count),
+         Growing = as.character(Growing),
+         Finished = as.character(Finished),
+         Replicates = as.character(Replicates),
+         MaxOD_blank = as.character(MaxOD_blank),
+         MaxOD_blank_sd = as.character(MaxOD_blank_sd))
+
+#Combine the original dataset with the averaged data
+monocultures_growth_1_C <- bind_rows(monocultures_growth_1_B, averaged_species_data)
+
+#View(monocultures_growth_1_C)
+
+
+
+##Next group to merge:  V. cholerae A1552 & V. cholerae N16961
+#First, define the species to be averaged
+unique(monocultures_growth_1_C$Species)
+species_to_average <- c("V. cholerae N16961", "V. cholerae A1552")
+
+#filter for the species to average and then calculate the mean for each Media
+averaged_species_data <- monocultures_growth_1_C %>%
+  filter(Species %in% species_to_average) %>%
+  dplyr::group_by(Media) %>%
+  dplyr::summarise(MaxOD = mean(MaxOD, na.rm = TRUE),
+                   MaxOD_sd = mean(MaxOD_sd, na.rm = TRUE),
+                   Rate = mean(Rate, na.rm = TRUE),
+                   Rate_sd = mean(Rate_sd, na.rm = TRUE),
+                   .groups = "drop") %>%
+  mutate(Species = "V. cholerae spp",
+         AUC18 = "averaged", 
+         AUC18_sd = "averaged",
+         Count = "averaged", 
+         Growing = "averaged",
+         Finished = "averaged", 
+         Replicates = "averaged",
+         MaxOD_blank = "averaged", 
+         MaxOD_blank_sd = "averaged")
+
+#Remove the species to be averaged from the original data
+monocultures_growth_1_C <- monocultures_growth_1_C[!monocultures_growth_1_C$Species %in% species_to_average, ]
+
+#Convert necessary columns to character to match the new averaged data
+monocultures_growth_1_C <- monocultures_growth_1_C %>%
+  mutate(AUC18 = as.character(AUC18),
+         AUC18_sd = as.character(AUC18_sd),
+         Count = as.character(Count),
+         Growing = as.character(Growing),
+         Finished = as.character(Finished),
+         Replicates = as.character(Replicates),
+         MaxOD_blank = as.character(MaxOD_blank),
+         MaxOD_blank_sd = as.character(MaxOD_blank_sd))
+
+#Combine the original data with the averaged data
+monocultures_growth_1_D <- bind_rows(monocultures_growth_1_C, averaged_species_data)
+#View(monocultures_growth_1_D)
+
+
+
+##Next group to merge: B. fragilis & B. fragilis enterotoxigenic
+# Define the species to be averaged
+unique(monocultures_growth_1_D$Species)
+species_to_average <- c("B. fragilis enterotoxigenic", "B. fragilis")
+
+#Filter for the species to average and then calculate the mean for each Media
+averaged_species_data <- monocultures_growth_1_D %>%
+  filter(Species %in% species_to_average) %>%
+  dplyr::group_by(Media) %>%
+  dplyr::summarise(MaxOD = mean(MaxOD, na.rm = TRUE),
+                   MaxOD_sd = mean(MaxOD_sd, na.rm = TRUE),
+                   Rate = mean(Rate, na.rm = TRUE),
+                   Rate_sd = mean(Rate_sd, na.rm = TRUE),
+                   .groups = "drop") %>%
+  mutate(Species = "B. fragilis spp",
+         AUC18 = "averaged", 
+         AUC18_sd = "averaged",
+         Count = "averaged", 
+         Growing = "averaged",
+         Finished = "averaged", 
+         Replicates = "averaged",
+         MaxOD_blank = "averaged", 
+         MaxOD_blank_sd = "averaged")
+
+#Remove the species to be averaged from the original data
+monocultures_growth_1_D <- monocultures_growth_1_D[!monocultures_growth_1_D$Species %in% species_to_average, ]
+
+#Convert necessary columns to character to match the new averaged data
+monocultures_growth_1_D <- monocultures_growth_1_D %>%
+  mutate(AUC18 = as.character(AUC18),
+         AUC18_sd = as.character(AUC18_sd),
+         Count = as.character(Count),
+         Growing = as.character(Growing),
+         Finished = as.character(Finished),
+         Replicates = as.character(Replicates),
+         MaxOD_blank = as.character(MaxOD_blank),
+         MaxOD_blank_sd = as.character(MaxOD_blank_sd))
+
+#Combine the original data with the averaged data
+monocultures_growth_1_E <- bind_rows(monocultures_growth_1_D, averaged_species_data)
+
+#Check the final structure
+#View(monocultures_growth_1_E)
+unique(monocultures_growth_1_E$Species)
+unique(monocultures_growth_1_E$Media)
+
+
+#Some final touches to make this dataframe compatible with the relative abundance dataframe; unique(TrA1_relative_abundance_table_t$Name)
+#Rename "P. difficile" to "C. difficile"
+monocultures_growth_1_E$Species <- gsub("P. difficile", "C. difficile", monocultures_growth_1_E$Species)
+
+#Rename "15 B" to "15B"
+monocultures_growth_1_E$Media <- gsub("15 B", "15B", monocultures_growth_1_E$Media)
+
+#Remove rows with certain Media values
+media_to_remove <- c('BHI++', 'GMM', 'mGAM', 'WCA', '15 A')
+monocultures_growth_1_E <- monocultures_growth_1_E[!monocultures_growth_1_E$Media %in% media_to_remove, ]
+
+#Rename the Media column to Medium
+names(monocultures_growth_1_E)[names(monocultures_growth_1_E) == "Media"] <- "Medium"
+
+#Check the changes
+View(monocultures_growth_1_E)
+
+
+
+##Now compatible with the relative abundance data as in unique(TrA1_relative_abundance_table_t$Name) and All_mixes dataframes analysed and formulated above
+##Keep columns of interest
+monocultures_growth_final <- monocultures_growth_1_E[, c(1:6)]
+
+monocultures_growth_final$Species <- gsub(" ", "_", monocultures_growth_final$Species)
+
+unique(monocultures_growth_final$Species)
+
+
+
+#Monoculture survivor richness with 'grouped' taxa in accordance with 16S 
+monoculture_survivor_richness1 <- monocultures_growth_final %>%
+  dplyr::group_by(Medium) %>%
+  dplyr::summarize(Monoculture_survivor_richness1 = sum(MaxOD > 0, na.rm = TRUE))
+
+Scatterplots1_df_B <- left_join(monoculture_survivor_richness1, Scatterplots1_df_B, by = "Medium")
+
+
+### Create scatters
+correlation1 <- cor.test(Scatterplots1_df_B$Monoculture_survivor_richness1, Scatterplots1_df_B$Mean_Alpha_div, method = "spearman")
+correlation1a <- cor.test(Scatterplots1_df_B$Monoculture_survivor_richness1, Scatterplots1_df_B$Mean_Alpha_div, method = "pearson")
+
+correlation2 <- cor.test(Scatterplots1_df_B$Chemical_richness, Scatterplots1_df_B$Mean_Alpha_div, method = "spearman")
+correlation2a <- cor.test(Scatterplots1_df_B$Chemical_richness, Scatterplots1_df_B$Mean_Alpha_div, method = "pearson")
+
+plot1 <- ggplot(Scatterplots1_df_B, aes(x = Monoculture_survivor_richness1, y = Mean_Alpha_div, color = Medium)) +
+  geom_smooth(aes(group=1), method = "lm", se = FALSE, color = "white", linetype = "dashed", alpha = 0.2) + 
+  geom_point(aes(size = Mean_Alpha_div), alpha = 0.8) +
+  annotate("text", x = -Inf, y = Inf, label = paste("       rho = ", round(correlation1$estimate, 2),"ns"), hjust = 0, vjust = 1, size = 6) +
+  scale_color_manual(values=c("black", "#00AFBB", "#2e37fe", "darkorchid1", "green", "#0072B2", "indianred","gold1", "firebrick4", "springgreen3",  "chocolate1","#6C0BA9", "red", "#999999", "magenta"), name="Medium") +
+  scale_size(range = c(1, 10)) +
+  scale_y_continuous(limits = c(0, 2.25)) +  
+  theme_minimal() +
+  labs(x = "Monoculture Survivor Richness", 
+       y = "Mean Alpha Diversity Across Mixes",
+       size = "Mean alpha diversity
+across mixes")  +
+  theme(axis.text = element_text(size = 16), 
+        axis.title = element_text(size = 16),
+        legend.title = element_text(size = 16),
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(), 
+        axis.line = element_line(), 
+        legend.text = element_text(size = 14)) +
+  guides(color = guide_legend(override.aes = list(size = 5)))  
+plot1
+
+plot2 <- ggplot(Scatterplots1_df_B, aes(x = Chemical_richness, y = Mean_Alpha_div, color = Medium)) +
+  geom_smooth(aes(group=1), method = "lm", se = TRUE, color = "darkgrey", linetype = "dashed", alpha = 0.2) + 
+  geom_point(aes(size = Mean_Alpha_div), alpha = 0.8) +
+  annotate("text", x = -Inf, y = Inf, label = paste("       rho = ", round(correlation2$estimate, 2),"**"), hjust = 0, vjust = 1, size = 6) +
+  scale_color_manual(values=c("black", "#00AFBB", "#2e37fe", "darkorchid1", "green", "#0072B2", "indianred","gold1", "firebrick4", "springgreen3",  "chocolate1","#6C0BA9", "red", "#999999", "magenta"), name="Medium") +
+  scale_size(range = c(1, 10)) +
+  scale_y_continuous(limits = c(0, 2.25)) +  
+  theme_minimal() +
+  labs(x = "Chemical Richness", 
+       y = "Mean Alpha Diversity Across Mixes",
+       size = "Mean alpha diversity
+across mixes")  +
+  theme(axis.text = element_text(size = 16), 
+        axis.title = element_text(size = 16),
+        legend.title = element_text(size = 16),
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(), 
+        axis.line = element_line(), 
+        legend.position = "right",
+        legend.text = element_text(size = 14)) +
+  guides(color = guide_legend(override.aes = list(size = 5)))  
+plot2
+
+
+
+
+#Subset species of interest by those who were inoculated from the start, as well as any (unexpected) ones 
+#that somehow managed to be in the end while having a 0 abundance score in the beginning
+Species_mix1<-c("A._odontolyticus", "B._adolescentis", "B._crossotus", "B._hansenii",
+                "B._longum_subsp._longum", "B._thetaiotaomicron", "B._uniformis", "B._vulgatus",
+                "C._bolteae", "C._comes", "C._perfringens_S107", "C._ramosum",
+                "C._saccharolyticum", "D._piger", "E._lenta", "E._rectale",
+                "E._siraeum", "F._nucleatum_subsp._animalis", "F._nucleatum_subsp._nucleatum", "H._parainfluenzae",
+                "L._gasseri", "L._lactis", "L._paracasei", "L._plantarum",
+                "P._copri", "C._difficile", "P._melaninogenica", "R._gnavus",
+                "S._salivarius", "E._coli_spp", "B._animalis_subsp._lactis_spp", "S._typhimurium_spp",
+                "V._cholerae_spp", "B._fragilis_spp")
+
+#Should also exclude: S._typhimurium_spp, but has a low load in all inoculum reps (in Mix 2 co-cultures, mostly ends with 0 and occassionally with a maximum of < 0.02)
+Species_mix2<-c("A._odontolyticus", "B._adolescentis", "B._crossotus", "B._hansenii",
+                "B._longum_subsp._longum", "B._thetaiotaomicron", "B._uniformis", "B._vulgatus",
+                "C._bolteae", "C._comes", "C._perfringens_S107", "C._ramosum",
+                "C._saccharolyticum", "D._piger", "E._lenta", "E._rectale",
+                "E._siraeum", "F._nucleatum_subsp._animalis", "F._nucleatum_subsp._nucleatum", 
+                "L._gasseri", "L._lactis", "L._paracasei", "L._plantarum",
+                "P._copri", "P._melaninogenica", "R._gnavus",
+                "S._salivarius", "E._coli_spp", "B._animalis_subsp._lactis_spp", "S._typhimurium_spp",
+                "B._fragilis_spp")
+
+#should exclude L. lactis. Has 1/3 replicates with very low load (0.000132626), with others being 0. (In Mix 3 co-cultures, usually end with 0, some occassions with a maximum of < 0.03)
+#L. paracasei should be excluded from inoculum, and is with all 3 replicates being 0, but it does show up at endpoints and should thus stay included
+# Same with L. plantarum
+Species_mix3<-c("A._odontolyticus", "B._adolescentis", "B._crossotus", "B._hansenii",
+                "B._thetaiotaomicron", "B._uniformis", "B._vulgatus",
+                "C._bolteae", "C._comes", "C._perfringens_S107", "C._ramosum",
+                "C._saccharolyticum", "D._piger", "E._lenta", "E._rectale",
+                "E._siraeum", "F._nucleatum_subsp._animalis", "F._nucleatum_subsp._nucleatum", "H._parainfluenzae",
+                "L._lactis", "L._paracasei", "L._plantarum",
+                "P._copri", "C._difficile", "P._melaninogenica", "R._gnavus",
+                "S._salivarius", "E._coli_spp", "S._typhimurium_spp",
+                "V._cholerae_spp", "B._fragilis_spp")
+
+#Subset per mix
+monocultures_growth_Mix1 <- subset(monocultures_growth_final, Species %in% Species_mix1)
+monocultures_growth_Mix2 <- subset(monocultures_growth_final, Species %in% Species_mix2)
+monocultures_growth_Mix3 <- subset(monocultures_growth_final, Species %in% Species_mix3)
+
+#Create "relative" values based on MaxODs
+# List of Media for subset
+Media_mix1 <- c("1", "2", "3", "4", "5", "7", "8", "9", "10", "11", "13", "14", "15B", "16")
+Media_mix2 <- c("1", "2", "3", "4", "5", "7", "8", "9", "10", "11", "13", "14", "15B", "16")
+Media_mix3 <- c("1", "2", "3", "4", "5", "7", "8", "9", "10", "11", "13", "14", "15B", "16")
+
+
+# Calculate the sum of "MaxOD" per "Medium" category
+sum_per_media_Mix1 <- aggregate(MaxOD ~ Medium, data = monocultures_growth_Mix1, sum)
+sum_per_media_Mix2 <- aggregate(MaxOD ~ Medium, data = monocultures_growth_Mix2, sum)
+sum_per_media_Mix3 <- aggregate(MaxOD ~ Medium, data = monocultures_growth_Mix3, sum)
+
+# Merge the sum values back into the original dataset
+monocultures_growth_Mix1 <- merge(monocultures_growth_Mix1, sum_per_media_Mix1, by = "Medium", suffixes = c("", "_sum"))
+monocultures_growth_Mix2 <- merge(monocultures_growth_Mix2, sum_per_media_Mix2, by = "Medium", suffixes = c("", "_sum"))
+monocultures_growth_Mix3 <- merge(monocultures_growth_Mix3, sum_per_media_Mix3, by = "Medium", suffixes = c("", "_sum"))
+#View(monocultures_growth_Mix2)
+
+# Calculate the relative maxOD by dividing "MaxOD" by the corresponding sum value
+monocultures_growth_Mix1$relative_maxOD <- monocultures_growth_Mix1$MaxOD / monocultures_growth_Mix1$MaxOD_sum
+monocultures_growth_Mix2$relative_maxOD <- monocultures_growth_Mix2$MaxOD / monocultures_growth_Mix2$MaxOD_sum
+monocultures_growth_Mix3$relative_maxOD <- monocultures_growth_Mix3$MaxOD / monocultures_growth_Mix3$MaxOD_sum
+
+# Remove the extra column created during the merge
+monocultures_growth_Mix1 <- subset(monocultures_growth_Mix1, select = -MaxOD_sum)
+monocultures_growth_Mix2 <- subset(monocultures_growth_Mix2, select = -MaxOD_sum)
+monocultures_growth_Mix3 <- subset(monocultures_growth_Mix3, select = -MaxOD_sum)
+
+
+#Make new column: relative_maxOD_sd 
+#We need the standard deviations to plot the error margins on the plots of relative_maxOD * relative_abundance
+#Make standard deviations relative to the new metric:
+monocultures_growth_Mix1$relative_maxOD_sd <- abs(monocultures_growth_Mix1$relative_maxOD / monocultures_growth_Mix1$MaxOD) * monocultures_growth_Mix1$MaxOD_sd
+monocultures_growth_Mix2$relative_maxOD_sd <- abs(monocultures_growth_Mix2$relative_maxOD / monocultures_growth_Mix2$MaxOD) * monocultures_growth_Mix2$MaxOD_sd
+monocultures_growth_Mix3$relative_maxOD_sd <- abs(monocultures_growth_Mix3$relative_maxOD / monocultures_growth_Mix3$MaxOD) * monocultures_growth_Mix3$MaxOD_sd
+
+
+#Subset for relevant info
+Monocultures_growth_Mix1 <-monocultures_growth_Mix1[, c(1,2,7,8)]
+Monocultures_growth_Mix2 <-monocultures_growth_Mix2[, c(1,2,7,8)]
+Monocultures_growth_Mix3 <-monocultures_growth_Mix3[, c(1,2,7,8)]
+
+
+##Take relative abundance data for pH 7, as defined and formulated earlier in script
+All_mixes_ab_pH7
+
+Relative_ab_pH7_Mix1 <- subset(All_mixes_ab_pH7, Mix == 1)
+Relative_ab_pH7_Mix2 <- subset(All_mixes_ab_pH7, Mix == 2)
+Relative_ab_pH7_Mix3 <- subset(All_mixes_ab_pH7, Mix == 3)
+
+#Transpose to match format Monocultures_growth
+
+Relative_ab_pH7_Mix1_T <- Relative_ab_pH7_Mix1 %>%
+  pivot_longer(
+    cols = B._vulgatus:Alpha_diversity,  # Columns to make into a single column
+    names_to = "Species",  # Name of the new key column
+    values_to = "Rel_ab"   # Name of the new value column
+  )
+
+Relative_ab_pH7_Mix2_T <- Relative_ab_pH7_Mix2  %>%
+  pivot_longer(
+    cols = B._vulgatus:Alpha_diversity,  
+    names_to = "Species",  
+    values_to = "Rel_ab"   
+  )
+
+Relative_ab_pH7_Mix3_T <- Relative_ab_pH7_Mix3 %>%
+  pivot_longer(
+    cols = B._vulgatus:Alpha_diversity,  
+    names_to = "Species", 
+    values_to = "Rel_ab"   
+  )
+
+
+##Load in Phylum and Gram-stain info
+TrA1_phylum_gram <- read_csv("Documents/TrA1_phylum_gram.csv")
+View(TrA1_phylum_gram)
+
+#Add phylum & gram specifications 
+Relative_ab_pH7_Mix1_T <- left_join(Relative_ab_pH7_Mix1_T, TrA1_phylum_gram, by = "Species")
+Relative_ab_pH7_Mix2_T <- left_join(Relative_ab_pH7_Mix2_T, TrA1_phylum_gram, by = "Species")
+Relative_ab_pH7_Mix3_T <- left_join(Relative_ab_pH7_Mix3_T, TrA1_phylum_gram, by = "Species")
+
+#Summarise Mix 1
+Relative_ab_pH7_Mix1_T_summarised <- aggregate(Rel_ab ~ Medium + Species + Phylum + Gram, data = Relative_ab_pH7_Mix1_T,
+                                               FUN = function(x) c(mean_Rel_ab = mean(x), sd_Rel_ab = sd(x, na.rm = TRUE)))
+
+#Flatten the resulting data frame
+Relative_ab_pH7_Mix1_T_summarised <- as.data.frame(Relative_ab_pH7_Mix1_T_summarised, stringsAsFactors = FALSE)
+
+#Summarise Mix 2
+Relative_ab_pH7_Mix2_T_summarised <- aggregate(Rel_ab ~ Medium + Species + Phylum + Gram, data = Relative_ab_pH7_Mix2_T,
+                                               FUN = function(x) c(mean_Rel_ab = mean(x), sd_Rel_ab = sd(x, na.rm = TRUE)))
+
+# Flatten the resulting data frame
+Relative_ab_pH7_Mix2_T_summarised <- as.data.frame(Relative_ab_pH7_Mix2_T_summarised, stringsAsFactors = FALSE)
+
+#Summarise Mix 3
+Relative_ab_pH7_Mix3_T_summarised <- aggregate(Rel_ab ~ Medium + Species + Phylum + Gram, data = Relative_ab_pH7_Mix3_T,
+                                               FUN = function(x) c(mean_Rel_ab = mean(x), sd_Rel_ab = sd(x, na.rm = TRUE)))
+
+# Flatten the resulting data frame
+Relative_ab_pH7_Mix3_T_summarised <- as.data.frame(Relative_ab_pH7_Mix3_T_summarised, stringsAsFactors = FALSE)
+
+
+# Convert nested variables to separate columns
+Relative_ab_pH7_Mix1_T_summarised <- cbind(Relative_ab_pH7_Mix1_T_summarised, Relative_ab_pH7_Mix1_T_summarised$Rel_ab)
+Relative_ab_pH7_Mix2_T_summarised <- cbind(Relative_ab_pH7_Mix2_T_summarised, Relative_ab_pH7_Mix2_T_summarised$Rel_ab)
+Relative_ab_pH7_Mix3_T_summarised <- cbind(Relative_ab_pH7_Mix3_T_summarised, Relative_ab_pH7_Mix3_T_summarised$Rel_ab)
+
+# Remove the nested variable from the dataframe
+Relative_ab_pH7_Mix1_T_summarised$Rel_ab <- NULL
+Relative_ab_pH7_Mix2_T_summarised$Rel_ab <- NULL
+Relative_ab_pH7_Mix3_T_summarised$Rel_ab <- NULL
+
+#Make merged datasets so that monoculture and co-culture info is together in one frame per Mix
+#Mix1
+unique(Relative_ab_pH7_Mix1_T_summarised$Medium)
+unique(Monocultures_growth_Mix1$Medium)
+Mix1_mono_and_co_culture <- merge(Relative_ab_pH7_Mix1_T_summarised, Monocultures_growth_Mix1, 
+                                  by = c("Medium", "Species"))
+
+#Mix2
+unique(Relative_ab_pH7_Mix2_T_summarised$Medium)
+unique(Monocultures_growth_Mix2$Medium)
+Mix2_mono_and_co_culture <- merge(Relative_ab_pH7_Mix2_T_summarised, Monocultures_growth_Mix2, 
+                                  by = c("Medium", "Species"))
+
+#Mix3
+unique(Relative_ab_pH7_Mix3_T_summarised$Medium)
+unique(Monocultures_growth_Mix3$Medium)
+Mix3_mono_and_co_culture <- merge(Relative_ab_pH7_Mix3_T_summarised, Monocultures_growth_Mix3, 
+                                  by = c("Medium", "Species"))
+
+#Replace the "NaN" with actual "NA"
+Mix1_mono_and_co_culture$relative_maxOD[Mix1_mono_and_co_culture$relative_maxOD == "NaN"] <- NA
+Mix2_mono_and_co_culture$relative_maxOD[Mix2_mono_and_co_culture$relative_maxOD == "NaN"] <- NA
+Mix3_mono_and_co_culture$relative_maxOD[Mix3_mono_and_co_culture$relative_maxOD == "NaN"] <- NA
+
+Mix1_mono_and_co_culture$relative_maxOD[Mix1_mono_and_co_culture$relative_maxOD_sd == "NaN"] <- NA
+Mix2_mono_and_co_culture$relative_maxOD[Mix2_mono_and_co_culture$relative_maxOD_sd == "NaN"] <- NA
+Mix3_mono_and_co_culture$relative_maxOD[Mix3_mono_and_co_culture$relative_maxOD_sd == "NaN"] <- NA
+
+Mix1_mono_and_co_culture$Mix = 1
+Mix2_mono_and_co_culture$Mix = 2
+Mix3_mono_and_co_culture$Mix = 3
+
+Investigate_all_mixes <- rbind(Mix1_mono_and_co_culture, Mix2_mono_and_co_culture, Mix3_mono_and_co_culture)
+
+
+#Plotting MIX 1, With log-transform ( adding 0.0001 to 0s)
+color_palette <- c("#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "royalblue1", "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf",
+                            "#aec7e8", "#ffbb78", "#98df8a", "#ff9896", "#c5b0d5", "#c49c94", "#f7b6d2", "purple", "#dbdb8d", "#9edae5",
+                            "blue", "#393b79", "#637939", "springgreen", "#7b4173", "black", "#bd9e39", "#6b6ecf", "red", "yellow",
+                            "#969696", "#7FFFD4", "#bc80bd", "orchid1", "#FF1D8E")
+                            
+sp <- ggplot(Mix1_mono_and_co_culture, aes(x = (relative_maxOD + 0.0001), y = (mean_Rel_ab + 0.0001), group = Species)) +
+  geom_point(size = 2.5, stroke=1.5, alpha = 0.6, aes(color = Phylum, shape = Medium))
+sp0 <- sp + theme_bw()
+
+sp1 <- sp0 + geom_abline(intercept = 0, slope = 1, linetype = "dashed", alpha = 0.5, size = 1) + 
+  scale_shape_manual(values = c(0, 3, 16, 5, 13, 8, 10, 15, 17, 2, 4, 1, 9, 6, 11)) +
+  scale_color_manual(values = phylum_colors)
+
+sp2 <- sp1 + 
+  scale_x_continuous(trans = 'log10', limits = c(0.0001, 1)) +
+  scale_y_continuous(trans = 'log10', limits = c(0.0001, 1)) +
+  labs(title = "Mix 1: relative maxODs in monoculture 
+versus relative abundances in co-culture",
+       x = "log10(Mean relative maxOD + 0.0001)",  
+       y = "log10(Mean relative abundance + 0.0001") +
+  theme(
+    axis.title.x = element_text(size = 14),  
+    axis.title.y = element_text(size = 14),  
+    axis.text.x = element_text(size = 12),   
+    axis.text.y = element_text(size = 12),    
+    legend.text = element_text(size=12),
+    legend.title= element_text(size=14),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    axis.line = element_line(color = "black"),
+    axis.ticks = element_line(color = "black")
+  )
+
+sp2
+
+
+##NEXT: winner loser quantification and analysis
+#Assign 0s to NAs
+Mix1_Mono_and_co_culture <- Mix1_mono_and_co_culture
+Mix2_Mono_and_co_culture <- Mix2_mono_and_co_culture
+Mix3_Mono_and_co_culture <- Mix3_mono_and_co_culture
+
+Mix1_Mono_and_co_culture[is.na(Mix1_Mono_and_co_culture)] <-0
+Mix2_Mono_and_co_culture[is.na(Mix2_Mono_and_co_culture)] <-0
+Mix3_Mono_and_co_culture[is.na(Mix3_Mono_and_co_culture)] <-0
+
+#Function to determine the status based on the given conditions:
+#If both (relative) monoculture and co-culture growth info is 0 for a given Species and Media combo: No growth
+#If monoc > 0, but co-cult = 0: Loser (in manuscript referred to as "emergent extinction")
+#If monoc = 0, but co-cult > 0: Winner (in manuscript referred to as "emergent survivor")
+#If monoc > 0 and co-cult > 0, if, co-cult info, with its confidence interval, lies above the monoc (and its confidence interval) info: Boosted
+#If monoc > 0 and co-cult > 0, if, co-cult info, with its confidence interval, lies below the monoc (and its confidence interval) info: Suppressed
+#If monoc > 0 and co-cult > 0, if, co-cult info, with its confidence interval, lies within the monoc (and its confidence interval) info: Variable/Inconclusive
+
+
+determineStatus <- function(mean_Rel_ab, sd_Rel_ab, relative_maxOD, relative_sd) {
+  ifelse(
+    is.na(mean_Rel_ab) | is.na(relative_maxOD),
+    "Missing data",
+    ifelse(
+      mean_Rel_ab == 0 & relative_maxOD == 0,
+      "No growth",
+      ifelse(
+        relative_maxOD == 0 & mean_Rel_ab > 0,
+        "Winner",
+        ifelse(
+          relative_maxOD > 0 & mean_Rel_ab == 0,
+          "Loser",
+          ifelse(
+            mean_Rel_ab + 1.96 * sd_Rel_ab > relative_maxOD + 1.96 * relative_sd,
+            "Boosted",
+            ifelse(
+              mean_Rel_ab - 1.96 * sd_Rel_ab < relative_maxOD - 1.96 * relative_sd,
+              "Suppressed",
+              "Variable"
+            )
+          )
+        )
+      )
+    )
+  )
+}
+
+
+
+# Apply the "Status assignment" function to each Mix and create the "Status" column
+
+Mix1_Mono_and_co_culture <- Mix1_Mono_and_co_culture%>%
+  dplyr::group_by(Medium, Species) %>%
+  dplyr::mutate(Status = determineStatus(mean_Rel_ab, sd_Rel_ab, relative_maxOD, relative_maxOD_sd)) %>%
+  ungroup()
+
+Mix2_Mono_and_co_culture <- Mix2_Mono_and_co_culture%>%
+  dplyr::group_by(Medium, Species) %>%
+  dplyr::mutate(Status = determineStatus(mean_Rel_ab, sd_Rel_ab, relative_maxOD, relative_maxOD_sd)) %>%
+  ungroup()
+
+Mix3_Mono_and_co_culture <- Mix3_Mono_and_co_culture%>%
+  dplyr::group_by(Medium, Species) %>%
+  dplyr::mutate(Status = determineStatus(mean_Rel_ab, sd_Rel_ab, relative_maxOD, relative_maxOD_sd)) %>%
+  ungroup()
+
+
+#Merge all three mixes with their status assigned
+All_Mixes_Mono_and_co_culture<-rbind(Mix1_Mono_and_co_culture,Mix2_Mono_and_co_culture,Mix3_Mono_and_co_culture)
+
+#Next step: prepare to plot statuses, for each Mix, per A) Medium, and B) species
+
+# Calculate the frequency of each label per Media category
+label_counts_Media_mix1 <- table(Mix1_Mono_and_co_culture$Medium, Mix1_Mono_and_co_culture$Status)
+label_counts_Media_mix2 <- table(Mix2_Mono_and_co_culture$Medium, Mix2_Mono_and_co_culture$Status)
+label_counts_Media_mix3 <- table(Mix2_Mono_and_co_culture$Medium, Mix3_Mono_and_co_culture$Status)
+# Reorder the Media categories based on the count of "No growth"
+media_order_Media_mix1 <- names(sort(-label_counts_Media_mix1[, "No growth"]))
+media_order_Media_mix2 <- names(sort(-label_counts_Media_mix2[, "No growth"]))
+media_order_Media_mix3 <- names(sort(-label_counts_Media_mix3[, "No growth"]))
+
+# Create a data frame for plotting
+plot_data_Media_mix1 <- data.frame(
+  Medium = factor(row.names(label_counts_Media_mix1), levels = media_order_Media_mix1),
+  No_growth = label_counts_Media_mix1[, "No growth"],
+  Winner = label_counts_Media_mix1[, "Winner"],
+  Loser = label_counts_Media_mix1[, "Loser"],
+  Boosted = label_counts_Media_mix1[, "Boosted"],
+  Suppressed = label_counts_Media_mix1[, "Suppressed"],
+  Variable = label_counts_Media_mix1[, "Variable"]
+)
+
+
+plot_data_Media_mix2 <- data.frame(
+  Medium = factor(row.names(label_counts_Media_mix2), levels = media_order_Media_mix2),
+  No_growth = label_counts_Media_mix2[, "No growth"],
+  Winner = label_counts_Media_mix2[, "Winner"],
+  Loser = label_counts_Media_mix2[, "Loser"],
+  Boosted = label_counts_Media_mix2[, "Boosted"],
+  Suppressed = label_counts_Media_mix2[, "Suppressed"],
+  Variable = label_counts_Media_mix2[, "Variable"]
+)
+
+
+plot_data_Media_mix3 <- data.frame(
+  Medium = factor(row.names(label_counts_Media_mix3), levels = media_order_Media_mix3),
+  No_growth = label_counts_Media_mix3[, "No growth"],
+  Winner = label_counts_Media_mix3[, "Winner"],
+  Loser = label_counts_Media_mix3[, "Loser"],
+  Boosted = label_counts_Media_mix3[, "Boosted"],
+  Suppressed = label_counts_Media_mix3[, "Suppressed"],
+  Variable = label_counts_Media_mix3[, "Variable"]
+)
+
+# Calculate the total sum for each Medium, which should be the total number of Species
+plot_data_Media_mix1$total <- rowSums(plot_data_Media_mix1[, c("No_growth", "Winner", "Loser", "Boosted", "Suppressed", "Variable")])
+plot_data_Media_mix2$total <- rowSums(plot_data_Media_mix2[, c("No_growth", "Winner", "Loser", "Boosted", "Suppressed", "Variable")])
+plot_data_Media_mix3$total <- rowSums(plot_data_Media_mix3[, c("No_growth", "Winner", "Loser", "Boosted", "Suppressed", "Variable")])
+
+
+# Order the data frame by the count of "No growth"
+# Mix 1 should add up to 34 distinct taxa, while mix 2 and 3 should add up to 31 distinct taxa
+plot_data_Media_mix1 <- plot_data_Media_mix1[order(plot_data_Media_mix1$No_growth, decreasing = TRUE), ]
+plot_data_Media_mix2 <- plot_data_Media_mix2[order(plot_data_Media_mix2$No_growth, decreasing = TRUE), ]
+plot_data_Media_mix3 <- plot_data_Media_mix3[order(plot_data_Media_mix3$No_growth, decreasing = TRUE), ]
+
+# remove "total" column once inspected the data
+plot_data_Media_mix1_1<-plot_data_Media_mix1[, c(1:7)]
+plot_data_Media_mix2_1<-plot_data_Media_mix2[, c(1:7)]
+plot_data_Media_mix3_1<-plot_data_Media_mix3[, c(1:7)]
+
+
+# Reshape the data into a long format
+plot_data_Media_mix1_long <- plot_data_Media_mix1_1 %>%
+  pivot_longer(cols = -Medium, names_to = "Status", values_to = "Count")
+
+plot_data_Media_mix2_long <- plot_data_Media_mix2_1 %>%
+  pivot_longer(cols = -Medium, names_to = "Status", values_to = "Count")
+
+plot_data_Media_mix3_long <- plot_data_Media_mix3_1 %>%
+  pivot_longer(cols = -Medium, names_to = "Status", values_to = "Count")
+
+# Order the Media categories by the count of "No_growth"
+plot_data_Media_mix1_long$Medium <- factor(plot_data_Media_mix1_long$Medium, levels = media_order_Media_mix1)
+plot_data_Media_mix2_long$Medium <- factor(plot_data_Media_mix2_long$Medium, levels = media_order_Media_mix2)
+plot_data_Media_mix3_long$Medium <- factor(plot_data_Media_mix3_long$Medium, levels = media_order_Media_mix3)
+
+# Convert 'Media' from factor to character in all dataframes
+plot_data_Media_mix1_long$Medium <- as.character(plot_data_Media_mix1_long$Medium)
+plot_data_Media_mix2_long$Medium <- as.character(plot_data_Media_mix2_long$Medium)
+plot_data_Media_mix3_long$Medium <- as.character(plot_data_Media_mix3_long$Medium)
+
+#Reassign mix-specificity
+plot_data_Media_mix1_long$Mix <- 1
+plot_data_Media_mix2_long$Mix <- 2
+plot_data_Media_mix3_long$Mix <- 3
+
+library(data.table)
+# Convert each to table
+setDT(plot_data_Media_mix1_long)
+setDT(plot_data_Media_mix2_long)
+setDT(plot_data_Media_mix3_long)
+
+#Calculate Fraction_surviving and Fraction_benefitting for each Medium
+plot_data_Media_mix1_long[, `:=` (
+  Fraction_surviving = sum(Count[Status %in% c('Winner', 'Boosted', 'Suppressed', 'Variable')]) /
+    sum(Count[Status %in% c('No_growth', 'Loser', 'Winner', 'Boosted', 'Suppressed', 'Variable')]),
+  Fraction_benefitting = sum(Count[Status %in% c('Winner', 'Boosted')]) /
+    sum(Count[Status %in% c('Winner', 'Boosted', 'Suppressed', 'Variable')])
+), by = Medium]
+
+plot_data_Media_mix2_long[, `:=`(
+  Fraction_surviving = sum(Count[Status %in% c('Winner', 'Boosted', 'Suppressed', 'Variable')]) /
+    sum(Count[Status %in% c('No_growth', 'Loser', 'Winner', 'Boosted', 'Suppressed', 'Variable')]),
+  Fraction_benefitting = sum(Count[Status %in% c('Winner', 'Boosted')]) /
+    sum(Count[Status %in% c('Winner', 'Boosted', 'Suppressed', 'Variable')])
+), by = Medium]
+
+plot_data_Media_mix3_long[, `:=`(
+  Fraction_surviving = sum(Count[Status %in% c('Winner', 'Boosted', 'Suppressed', 'Variable')]) /
+    sum(Count[Status %in% c('No_growth', 'Loser', 'Winner', 'Boosted', 'Suppressed', 'Variable')]),
+  Fraction_benefitting = sum(Count[Status %in% c('Winner', 'Boosted')]) /
+    sum(Count[Status %in% c('Winner', 'Boosted', 'Suppressed', 'Variable')])
+), by = Medium]
+
+# Bind the three dataframes together 
+plot_data_for_Media_across_mixes <- bind_rows(plot_data_Media_mix1_long, plot_data_Media_mix2_long, plot_data_Media_mix3_long)
+
+
+
+##Now, we want the same overview for Species
+# Mix 1
+label_counts_Mix1 <- table(Mix1_Mono_and_co_culture$Species, Mix1_Mono_and_co_culture$Status)
+
+# Reorder the Media categories based on the count of "No growth"
+Species_order_Mix1 <- names(sort(-label_counts_Mix1[, "No growth"]))
+
+# Create a data frame for plotting
+plot_data_Mix1 <- data.frame(
+  Species = factor(row.names(label_counts_Mix1), levels = Species_order_Mix1),
+  No_growth = label_counts_Mix1[, "No growth"],
+  Winner = label_counts_Mix1[, "Winner"],
+  Loser = label_counts_Mix1[, "Loser"],
+  Boosted = label_counts_Mix1[, "Boosted"],
+  Suppressed = label_counts_Mix1[, "Suppressed"],
+  Variable = label_counts_Mix1[, "Variable"]
+)
+
+# Calculate the total sum for each Species, which should be the total number of species
+plot_data_Mix1$total <- rowSums(plot_data_Mix1[, c("No_growth", "Winner", "Loser", "Boosted", "Suppressed", "Variable")])
+
+# Order the data frame by the count of "No growth". All totals should end up at 14 (total media used)
+plot_data_Mix1 <- plot_data_Mix1[order(plot_data_Mix1$No_growth, decreasing = TRUE), ]
+
+plot_data_Mix1_1<-plot_data_Mix1[, c(1:7)]
+# Reshape the data into a long format
+plot_data_long_Mix1 <- plot_data_Mix1_1 %>%
+  pivot_longer(cols = -Species, names_to = "Status", values_to = "Count")
+
+
+# Mix 2
+label_counts_Mix2 <- table(Mix2_Mono_and_co_culture$Species, Mix2_Mono_and_co_culture$Status)
+
+# Reorder the Media categories based on the count of "No growth"
+Species_order_Mix2 <- names(sort(-label_counts_Mix2[, "No growth"]))
+
+# Create a data frame for plotting
+plot_data_Mix2 <- data.frame(
+  Species = factor(row.names(label_counts_Mix2), levels = Species_order_Mix2),
+  No_growth = label_counts_Mix2[, "No growth"],
+  Winner = label_counts_Mix2[, "Winner"],
+  Loser = label_counts_Mix2[, "Loser"],
+  Boosted = label_counts_Mix2[, "Boosted"],
+  Suppressed = label_counts_Mix2[, "Suppressed"],
+  Variable = label_counts_Mix2[, "Variable"]
+)
+
+# Calculate the total sum for each Species, which should be the total number of species
+plot_data_Mix2$total <- rowSums(plot_data_Mix2[, c("No_growth", "Winner", "Loser", "Boosted", "Suppressed", "Variable")])
+
+# Order the data frame by the count of "No growth"
+plot_data_Mix2 <- plot_data_Mix2[order(plot_data_Mix2$No_growth, decreasing = TRUE), ]
+
+plot_data_Mix2_1<-plot_data_Mix2[, c(1:7)]
+# Reshape the data into a long format
+plot_data_long_Mix2 <- plot_data_Mix2_1 %>%
+  pivot_longer(cols = -Species, names_to = "Status", values_to = "Count")
+
+# Mix 3
+label_counts_Mix3 <- table(Mix3_Mono_and_co_culture$Species, Mix3_Mono_and_co_culture$Status)
+
+#Reorder the Media categories based on the count of "No growth"
+Species_order_Mix3 <- names(sort(-label_counts_Mix3[, "No growth"]))
+
+#Create a data frame for plotting
+plot_data_Mix3 <- data.frame(
+  Species = factor(row.names(label_counts_Mix3), levels = Species_order_Mix3),
+  No_growth = label_counts_Mix3[, "No growth"],
+  Winner = label_counts_Mix3[, "Winner"],
+  Loser = label_counts_Mix3[, "Loser"],
+  Boosted = label_counts_Mix3[, "Boosted"],
+  Suppressed = label_counts_Mix3[, "Suppressed"],
+  Variable = label_counts_Mix3[, "Variable"]
+)
+
+#Calculate the total sum for each Species, which should be the total number of species
+plot_data_Mix3$total <- rowSums(plot_data_Mix3[, c("No_growth", "Winner", "Loser", "Boosted", "Suppressed", "Variable")])
+
+# Order the data frame by the count of "No growth"
+plot_data_Mix3 <- plot_data_Mix3[order(plot_data_Mix3$No_growth, decreasing = TRUE), ]
+
+plot_data_Mix3_1<-plot_data_Mix3[, c(1:7)]
+# Reshape the data into a long format
+plot_data_long_Mix3 <- plot_data_Mix3_1 %>%
+  pivot_longer(cols = -Species, names_to = "Status", values_to = "Count")
+
+
+## Reassign mix-specificity
+plot_data_long_Mix1$Mix <- 1
+plot_data_long_Mix2$Mix <- 2
+plot_data_long_Mix3$Mix <- 3
+
+# Assign phylum names again
+plot_data_long_Mix1 <- left_join(plot_data_long_Mix1, TrA1_phylum_gram, by = "Species")
+plot_data_long_Mix2 <- left_join(plot_data_long_Mix2, TrA1_phylum_gram, by = "Species")
+plot_data_long_Mix3 <- left_join(plot_data_long_Mix3, TrA1_phylum_gram, by = "Species")
+
+
+# Calculate the fractions of counts for each species
+#Ratios would not work in case we have only survivors (as division by 0 would lead to 'Inf' output)
+
+# For Mix 1:
+plot_data_long_Mix1a <- plot_data_long_Mix1 %>%
+  dplyr::group_by(Species) %>%
+  dplyr::mutate(
+    numerator1 = sum(Count[Status %in% c('Winner', 'Boosted', 'Suppressed', 'Variable')]),
+    denominator1 = sum(Count[Status %in% c('No_growth', 'Loser', 'Winner', 'Boosted', 'Suppressed', 'Variable')]),
+    Fraction_surviving = numerator1 / denominator1,
+    numerator2 = sum(Count[Status %in% c('Winner', 'Boosted')]),
+    denominator2 = sum(Count[Status %in% c('Winner', 'Boosted', 'Suppressed', 'Variable')]),
+    Fraction_benefitting = numerator2 / denominator2
+  )
+
+# For Mix 2:
+plot_data_long_Mix2a <- plot_data_long_Mix2 %>%
+  dplyr::group_by(Species) %>%
+  dplyr::mutate(
+    numerator1 = sum(Count[Status %in% c('Winner', 'Boosted', 'Suppressed', 'Variable')]),
+    denominator1 = sum(Count[Status %in% c('No_growth', 'Loser', 'Winner', 'Boosted', 'Suppressed', 'Variable')]),
+    Fraction_surviving = numerator1 / denominator1,
+    numerator2 = sum(Count[Status %in% c('Winner', 'Boosted')]),
+    denominator2 = sum(Count[Status %in% c('Winner', 'Boosted', 'Suppressed', 'Variable')]),
+    Fraction_benefitting = numerator2 / denominator2
+  )
+
+# For Mix 3:
+plot_data_long_Mix3a <- plot_data_long_Mix3 %>%
+  dplyr::group_by(Species) %>%
+  dplyr::mutate(
+    numerator1 = sum(Count[Status %in% c('Winner', 'Boosted', 'Suppressed', 'Variable')]),
+    denominator1 = sum(Count[Status %in% c('No_growth', 'Loser', 'Winner', 'Boosted', 'Suppressed', 'Variable')]),
+    Fraction_surviving = numerator1 / denominator1,
+    numerator2 = sum(Count[Status %in% c('Winner', 'Boosted')]),
+    denominator2 = sum(Count[Status %in% c('Winner', 'Boosted', 'Suppressed', 'Variable')]),
+    Fraction_benefitting = numerator2 / denominator2
+  )
+
+
+###by Phylum
+# For Mix 1:
+plot_data_long_Mix1_phylum <- plot_data_long_Mix1 %>%
+  dplyr::group_by(Phylum) %>%
+  dplyr::mutate(
+    numerator1 = sum(Count[Status %in% c('Winner', 'Boosted', 'Suppressed', 'Variable')]),
+    denominator1 = sum(Count[Status %in% c('No_growth', 'Loser', 'Winner', 'Boosted', 'Suppressed', 'Variable')]),
+    Fraction_surviving = numerator1 / denominator1,
+    numerator2 = sum(Count[Status %in% c('Winner', 'Boosted')]),
+    denominator2 = sum(Count[Status %in% c('Winner', 'Boosted', 'Suppressed', 'Variable')]),
+    Fraction_benefitting = numerator2 / denominator2
+  )
+
+# For Mix 2:
+plot_data_long_Mix2_phylum <- plot_data_long_Mix2 %>%
+  dplyr::group_by(Phylum) %>%
+  dplyr::mutate(
+    numerator1 = sum(Count[Status %in% c('Winner', 'Boosted', 'Suppressed', 'Variable')]),
+    denominator1 = sum(Count[Status %in% c('No_growth', 'Loser', 'Winner', 'Boosted', 'Suppressed', 'Variable')]),
+    Fraction_surviving = numerator1 / denominator1,
+    numerator2 = sum(Count[Status %in% c('Winner', 'Boosted')]),
+    denominator2 = sum(Count[Status %in% c('Winner', 'Boosted', 'Suppressed', 'Variable')]),
+    Fraction_benefitting = numerator2 / denominator2
+  )
+
+# For Mix 3:
+plot_data_long_Mix3_phylum <- plot_data_long_Mix3 %>%
+  dplyr::group_by(Phylum) %>%
+  dplyr::mutate(
+    numerator1 = sum(Count[Status %in% c('Winner', 'Boosted', 'Suppressed', 'Variable')]),
+    denominator1 = sum(Count[Status %in% c('No_growth', 'Loser', 'Winner', 'Boosted', 'Suppressed', 'Variable')]),
+    Fraction_surviving = numerator1 / denominator1,
+    numerator2 = sum(Count[Status %in% c('Winner', 'Boosted')]),
+    denominator2 = sum(Count[Status %in% c('Winner', 'Boosted', 'Suppressed', 'Variable')]),
+    Fraction_benefitting = numerator2 / denominator2
+  )
+
+###By Gram stain
+# For Mix 1:
+plot_data_long_Mix1_gram <- plot_data_long_Mix1 %>%
+  dplyr::group_by(Gram) %>%
+  dplyr::mutate(
+    numerator1 = sum(Count[Status %in% c('Winner', 'Boosted', 'Suppressed', 'Variable')]),
+    denominator1 = sum(Count[Status %in% c('No_growth', 'Loser', 'Winner', 'Boosted', 'Suppressed', 'Variable')]),
+    Fraction_surviving = numerator1 / denominator1,
+    numerator2 = sum(Count[Status %in% c('Winner', 'Boosted')]),
+    denominator2 = sum(Count[Status %in% c('Winner', 'Boosted', 'Suppressed', 'Variable')]),
+    Fraction_benefitting = numerator2 / denominator2
+  )
+
+# For Mix 2:
+plot_data_long_Mix2_gram <- plot_data_long_Mix2 %>%
+  dplyr::group_by(Gram) %>%
+  dplyr::mutate(
+    numerator1 = sum(Count[Status %in% c('Winner', 'Boosted', 'Suppressed', 'Variable')]),
+    denominator1 = sum(Count[Status %in% c('No_growth', 'Loser', 'Winner', 'Boosted', 'Suppressed', 'Variable')]),
+    Fraction_surviving = numerator1 / denominator1,
+    numerator2 = sum(Count[Status %in% c('Winner', 'Boosted')]),
+    denominator2 = sum(Count[Status %in% c('Winner', 'Boosted', 'Suppressed', 'Variable')]),
+    Fraction_benefitting = numerator2 / denominator2
+  )
+
+# For Mix 3:
+plot_data_long_Mix3_gram <- plot_data_long_Mix3 %>%
+  dplyr::group_by(Gram) %>%
+  dplyr::mutate(
+    numerator1 = sum(Count[Status %in% c('Winner', 'Boosted', 'Suppressed', 'Variable')]),
+    denominator1 = sum(Count[Status %in% c('No_growth', 'Loser', 'Winner', 'Boosted', 'Suppressed', 'Variable')]),
+    Fraction_surviving = numerator1 / denominator1,
+    numerator2 = sum(Count[Status %in% c('Winner', 'Boosted')]),
+    denominator2 = sum(Count[Status %in% c('Winner', 'Boosted', 'Suppressed', 'Variable')]),
+    Fraction_benefitting = numerator2 / denominator2
+  )
+
+#Reassign mix-specificity
+plot_data_long_Mix1a$Mix <- 1
+plot_data_long_Mix2a$Mix <- 2
+plot_data_long_Mix3a$Mix <- 3
+
+plot_data_long_Mix1_phylum$Mix <- 1
+plot_data_long_Mix2_phylum$Mix <- 2
+plot_data_long_Mix3_phylum$Mix <- 3
+
+plot_data_long_Mix1_gram$Mix <- 1
+plot_data_long_Mix2_gram$Mix <- 2
+plot_data_long_Mix3_gram$Mix <- 3
+
+
+#Bind the dataframes together
+All_mixes_winner_loser_Mono_vs_cocult_Species<- rbind(plot_data_long_Mix1a, plot_data_long_Mix2a, plot_data_long_Mix3a)
+All_mixes_winner_loser_Mono_vs_cocult_Phylum<- rbind(plot_data_long_Mix1_phylum, plot_data_long_Mix2_phylum, plot_data_long_Mix3_phylum)
+All_mixes_winner_loser_Mono_vs_cocult_Gram<- rbind(plot_data_long_Mix1_gram, plot_data_long_Mix2_gram, plot_data_long_Mix3_gram)
+
+###Plotting relative success statuses and counts across media and species/phyla/gram
+#Plot fractions as Heatmaps
+All_mixes_winner_loser_Mono_vs_cocult_Species$Mix <- factor(All_mixes_winner_loser_Mono_vs_cocult_Species$Mix)
+
+# Define custom color gradient
+# Convert Mix and Species labels
+All_mixes_winner_loser_Mono_vs_cocult_Species$Mix <- factor(All_mixes_winner_loser_Mono_vs_cocult_Species$Mix)
+All_mixes_winner_loser_Mono_vs_cocult_Species$Species <- gsub("_", " ", All_mixes_winner_loser_Mono_vs_cocult_Species$Species)
+All_mixes_winner_loser_Mono_vs_cocult_Species$Species <- paste(All_mixes_winner_loser_Mono_vs_cocult_Species$Species, " ")
+
+
+sums <- aggregate(Fraction_surviving ~ Species, data = All_mixes_winner_loser_Mono_vs_cocult_Species, FUN = sum)
+All_mixes_winner_loser_Mono_vs_cocult_Species$Species <- factor(All_mixes_winner_loser_Mono_vs_cocult_Species$Species, 
+                                                                levels = sums$Species[order(sums$Fraction_surviving, decreasing = FALSE)])
+
+#Define custom color gradient
+colors <- c("white", "slategray1", "skyblue", "skyblue3", "skyblue4")
+breaks <- c(0, 0.25, 0.5, 0.75, 1)
+values <- seq(0, 1, length.out = length(breaks))
+col_fun <- colorRampPalette(colors)(length(breaks) - 1)
+
+#Create a summary data frame with unique Species and their corresponding Phylum
+label_data <- All_mixes_winner_loser_Mono_vs_cocult_Species %>%
+  distinct(Species, Phylum) %>%
+  dplyr::mutate(y_position = as.numeric(factor(Species, levels = unique(Species)))) 
+
+#Now correct y_position by removing grouping if any and ensure it's unique for each Species
+label_data <- label_data %>%
+  dplyr::ungroup() %>%
+  dplyr::mutate(y_position = rank(Species))
+
+# Check if y_position looks correct
+print(label_data)
+
+# Define colors for each Phylum
+phylum_colors <- setNames(c("royalblue2", "yellow4", "turquoise4", "sienna", "magenta3"),
+                          unique(label_data$Phylum))
+
+
+# Create the ggplot object
+p <- ggplot(All_mixes_winner_loser_Mono_vs_cocult_Species, aes(x = as.character(Mix), y = Species, fill = Fraction_surviving)) +
+  geom_tile() +
+  scale_fill_gradientn(colors = col_fun, values = values, guide = "colorbar", limits = range(breaks), breaks = breaks, name = "Fraction") +
+  theme_bw() +
+  theme(
+    axis.text.y = element_blank(), 
+    axis.ticks.y = element_blank(),
+    plot.margin = margin(t = 10, r = 10, b = 10, l = 190, unit = "pt") 
+  ) +
+  labs(y = NULL, x = "Mix", title = "Fraction surviving in co-culture by Mix and Species") +
+  scale_y_discrete(limits = levels(All_mixes_winner_loser_Mono_vs_cocult_Species$Species))  
+
+# Add the species names with geom_text
+p <- p + geom_text(data = label_data, aes(x = 0, y = y_position, label = Species, color = Phylum), 
+                   hjust = 1, check_overlap = FALSE, inherit.aes = FALSE) +
+  scale_color_manual(values = phylum_colors) +
+  theme(legend.position = "right") +
+  coord_cartesian(clip = 'off')  
+p
+
+All_mixes_winner_loser_Mono_vs_cocult_Species$Fraction_benefitting <- 
+  ifelse(is.nan(All_mixes_winner_loser_Mono_vs_cocult_Species$Fraction_benefitting), 
+         0, 
+         All_mixes_winner_loser_Mono_vs_cocult_Species$Fraction_benefitting)
+
+
+##Fraction benefitting
+p <- ggplot(All_mixes_winner_loser_Mono_vs_cocult_Species, aes(x = as.character(Mix), y = Species, fill = Fraction_benefitting)) +
+  geom_tile() +
+  scale_fill_gradientn(colors = col_fun, values = values, guide = "colorbar", limits = range(breaks), breaks = breaks, name = "Fraction") +
+  theme_bw() +
+  theme(
+    axis.text.y = element_blank(), 
+    axis.ticks.y = element_blank(),
+    plot.margin = margin(t = 10, r = 10, b = 10, l = 180, unit = "pt") 
+  ) +
+  labs(y = NULL, x = "Mix", title = "Fraction benefitting in co-culture by Mix and Species") +
+  scale_y_discrete(limits = levels(All_mixes_winner_loser_Mono_vs_cocult_Species$Species))  
+
+p
+
+# Add the species names with geom_text
+p <- p + geom_text(data = label_data, aes(x = 0, y = y_position, label = Species, color = Phylum), 
+                   hjust = 1, check_overlap = FALSE, inherit.aes = FALSE) +
+  scale_color_manual(values = phylum_colors) +
+  theme(legend.position = "right") +
+  coord_cartesian(clip = 'off')  
+p
+
+
+##Remove space again to avoid issues in future references of the code
+#This is what we did earlier: All_mixes_winner_loser_Mono_vs_cocult_Species$Species <- paste(All_mixes_winner_loser_Mono_vs_cocult_Species$Species, " ")
+# If spaces are still present behind species labels, uncomment the following line:
+# All_mixes_winner_loser_Mono_vs_cocult_Species$Species <- trimws(All_mixes_winner_loser_Mono_vs_cocult_Species$Species, "right")
+#If order is no longer in accordance with Sum of fraction surviving, uncomment the following 2 lines:
+#All_mixes_winner_loser_Mono_vs_cocult_Species$Species <- factor(All_mixes_winner_loser_Mono_vs_cocult_Species$Species, 
+#levels = sums$Species[order(sums$Fraction_surviving, decreasing = FALSE)])
+## Plotting without colour-coded labels
+ggplot(All_mixes_winner_loser_Mono_vs_cocult_Species, aes(x = Mix, y = Species, fill = Fraction_surviving)) +
+  geom_tile() +
+  #geom_text(aes(label = round(Fraction_benefitting, 2)), vjust = 0.5) +
+  scale_fill_gradientn(colors = col_fun, values = values, guide = "colorbar", limits = range(breaks), breaks = breaks) +
+  ylab("Species") +
+  xlab("Mix") +
+  ggtitle("Fraction surviving in co-culture by Mix and Species") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 0, hjust = 1, size = 12))
+
+ggplot(All_mixes_winner_loser_Mono_vs_cocult_Species, aes(x = Mix, y = Species, fill = Fraction_benefitting)) +
+  geom_tile() +
+  #geom_text(aes(label = round(Fraction_benefitting, 2)), vjust = 0.5) +
+  scale_fill_gradientn(colors = col_fun, values = values, guide = "colorbar", limits = range(breaks), breaks = breaks) +
+  ylab("Species") +
+  xlab("Mix") +
+  ggtitle("Fraction benefitting in co-culture by Mix and Species") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 0, hjust = 1, size = 12))
+
+
+
+##Prepare heatmaps per phylum
+colors <- c("white", "skyblue", "skyblue3", "skyblue4")
+breaks <- c(0, 0.15, 0.3, 0.45)
+values <- seq(0, 1, length.out = length(breaks))
+col_fun <- colorRampPalette(colors)(length(breaks) - 1)
+
+ggplot(All_mixes_winner_loser_Mono_vs_cocult_Phylum, aes(x = Mix, y = Phylum, fill = Fraction_surviving)) +
+  geom_tile() +
+  #geom_text(aes(label = round(Fraction_surviving, 2)), vjust = 0.5) +
+  scale_fill_gradientn(colors = col_fun, values = values, guide = "colorbar", limits = range(breaks), breaks = breaks, name = "Fraction") +
+  ylab("Phylum") +
+  xlab("Mix") +
+  ggtitle("Fraction surviving in co-culture by Mix and Phylum") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 0, hjust = 1, size = 12))
+
+colors <- c("white", "slategray1", "skyblue", "skyblue3", "skyblue4")
+breaks <- c(0, 0.25, 0.5, 0.75, 1)
+values <- seq(0, 1, length.out = length(breaks))
+col_fun <- colorRampPalette(colors)(length(breaks) - 1)
+
+ggplot(All_mixes_winner_loser_Mono_vs_cocult_Phylum, aes(x = Mix, y = Phylum, fill = Fraction_benefitting)) +
+  geom_tile() +
+  #geom_text(aes(label = round(Fraction_benefitting, 2)), vjust = 0.5) +
+  scale_fill_gradientn(colors = col_fun, values = values, guide = "colorbar", limits = range(breaks), breaks = breaks) +
+  ylab("Phylum") +
+  xlab("Mix") +
+  ggtitle("Fraction benefitting in co-culture by Mix and Phylum") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 0, hjust = 1, size = 12))
+
+##Prepare heatmap per gram stain
+colors <- c("white", "slategray1", "skyblue", "skyblue3", "skyblue4")
+breaks <- c(0.3, 0.325, 0.35, 0.375, 0.4)
+values <- seq(0, 1, length.out = length(breaks))
+col_fun <- colorRampPalette(colors)(length(breaks) - 1)
+ggplot(All_mixes_winner_loser_Mono_vs_cocult_Gram, aes(x = Mix, y = Gram, fill = Fraction_surviving)) +
+  geom_tile() +
+  #geom_text(aes(label = round(Fraction_surviving, 2)), vjust = 0.5) +
+  scale_fill_gradientn(colors = col_fun, values = values, guide = "colorbar", limits = range(breaks), breaks = breaks, name = "Fraction") +
+  ylab("Gram-stain") +
+  xlab("Mix") +
+  #ggtitle("Fraction surviving in co-culture by Mix and Gram-stain") +
+  ggtitle("") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 0, hjust = 1, size = 12), axis.text.y = element_text(angle = 0, hjust = 1, size = 12))
+
+colors <- c("white", "slategray1", "skyblue", "skyblue3", "skyblue4")
+breaks <- c(0.25, 0.35, 0.45, 0.55, 0.65)
+ggplot(All_mixes_winner_loser_Mono_vs_cocult_Gram, aes(x = Mix, y = Gram, fill = Fraction_benefitting)) +
+  geom_tile() +
+  #geom_text(aes(label = round(Fraction_benefitting, 2)), vjust = 0.5) +
+  scale_fill_gradientn(colors = col_fun, values = values, guide = "colorbar", limits = range(breaks), breaks = breaks, name = "Fraction") +
+  ylab("Gram-stain") +
+  xlab("Mix") +
+  #ggtitle("Fraction benefitting in co-culture by Mix and Gram-stain") +
+  ggtitle("") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 0, hjust = 1, size = 12), axis.text.y = element_text(angle = 0, hjust = 1, size = 12))
+
+
+
+##Heatmaps across media
+#colors <- c("skyblue2", "slategray1", "white", "#FFD1DC", "pink2")
+colors <- c("white", "slategray1", "skyblue", "skyblue3", "skyblue4")
+breaks <- c(0.05, 0.2, 0.35, 0.5, 0.65)
+values <- seq(0, 1, length.out = length(breaks))
+col_fun <- colorRampPalette(colors)(length(breaks) - 1)
+
+# Calculate the sum of 'Fraction_surviving' for each 'Medium' across all 'Mix' levels
+sums_by_medium <- plot_data_for_Media_across_mixes %>%
+  dplyr::group_by(Medium) %>%
+  dplyr::summarise(Total = -1*sum(Fraction_surviving, na.rm = TRUE)) %>%
+  dplyr::arrange(desc(Total))
+
+# Reorder 'Medium' factor levels based on the calculated sums
+plot_data_for_Media_across_mixes$Medium <- factor(plot_data_for_Media_across_mixes$Medium, 
+                                                  levels = sums_by_medium$Medium)
+
+# Now create the plot
+ggplot(plot_data_for_Media_across_mixes, aes(x = Mix, y = Medium, fill = Fraction_surviving)) +
+  geom_tile() +
+  scale_fill_gradientn(colors = col_fun, values = values, guide = "colorbar", limits = range(breaks), breaks = breaks, name = "Fraction") +
+  ylab("Medium") +
+  xlab("Mix") +
+  ggtitle("Fraction surviving in co-culture by Mix and Medium") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 0, hjust = 1, size = 12), axis.text.y = element_text(angle = 0, hjust = 1, size = 12))
+
+#
+colors <- c("white", "slategray1", "skyblue", "skyblue3", "skyblue4")
+breaks <- c(0, 0.25, 0.5, 0.75, 1)
+values <- seq(0, 1, length.out = length(breaks))
+col_fun <- colorRampPalette(colors)(length(breaks) - 1)
+ggplot(plot_data_for_Media_across_mixes, aes(x = Mix, y = Medium, fill = Fraction_benefitting)) +
+  geom_tile() +
+  #geom_text(aes(label = round(Fraction_benefitting, 2)), vjust = 0.5) +
+  scale_fill_gradientn(colors = col_fun, values = values, guide = "colorbar", limits = range(breaks), breaks = breaks, name = "Fraction") +
+  ylab("Medium") +
+  xlab("Mix") +
+  ggtitle("Fraction benefitting in co-culture by Mix and Medium") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 0, hjust = 1, size = 12), axis.text.y = element_text(angle = 0, hjust = 1, size = 12))
+
+
+##Now, investigate whether transporter annotations can be predictive of any species' propensity to survive / win?
+Transporter_annotations <- read_csv("Documents/Transporter_annotations.csv")
+
+#Creating the Average_fractions dataframe
+Average_fractions <- All_mixes_winner_loser_Mono_vs_cocult_Species %>%
+  dplyr::group_by(Species) %>%
+  dplyr::summarise(
+    mean_Fraction_benefitting = mean(Fraction_benefitting, na.rm = TRUE),
+    mean_Fraction_surviving = mean(Fraction_surviving, na.rm = TRUE)
+  )
+
+head(Average_fractions)
+##Prepare for merging
+Transporter_annotations$Species <- gsub("_", " ", Transporter_annotations$Species)
+TrA1_phylum_gram$Species <- gsub("_", " ", TrA1_phylum_gram$Species)
+
+Average_fractions$Species <- as.character(stringr::str_trim(Average_fractions$Species))
+
+#Ensure Species in Transporter_annotations_and_fractions is also a character
+Transporter_annotations_and_fractions$Species <- as.character(Transporter_annotations_and_fractions$Species)
+
+#Now perform the left join
+Transporter_annotations_and_fractions <- left_join(Transporter_annotations, Average_fractions, by = "Species")
+Transporter_annotations_and_fractions1 <- left_join(Transporter_annotations_and_fractions, TrA1_phylum_gram, by = "Species")
+
+cor_result_fraction_surviving<- cor.test(Transporter_annotations_and_fractions1$transporters, Transporter_annotations_and_fractions1$mean_Fraction_surviving, method="spearman")
+cor_result_fraction_surviving_genome<- cor.test(Transporter_annotations_and_fractions1$sequence_length, Transporter_annotations_and_fractions1$mean_Fraction_surviving, method="spearman")
+#when not subsetting for F_S (fraction surviving) of > 0, genome size also positively correlates with F_S, however, less strongly so than transporters
+#If we subset only for species that survive in at least one condition:
+Transporter_annotations_and_fractions2 <- subset(Transporter_annotations_and_fractions1, mean_Fraction_surviving > 0)
+cor_result_fraction_surviving_2<- cor.test(Transporter_annotations_and_fractions2$transporters, Transporter_annotations_and_fractions2$mean_Fraction_surviving, method="spearman")
+cor_result_fraction_surviving_genome_2<- cor.test(Transporter_annotations_and_fractions2$sequence_length, Transporter_annotations_and_fractions2$mean_Fraction_surviving, method="spearman")
+cor_result_fraction_surviving_2
+cor_result_fraction_surviving_genome_2
+#here we see that when subsetting for F_S>0, genome size is no longer a significant correlator with F_S, but Transporter count is. 
+#Suggests that the correlation of transporters with a species' overall propensity to survive is not an artefact of sequence length
+
+#Here, we investigate the correlations with F_B and also with outlier C. bolteae removed
+cor_result_fraction_benefitting<- cor.test(Transporter_annotations_and_fractions1$transporters, Transporter_annotations_and_fractions1$mean_Fraction_benefitting, method="spearman")
+cor_result_fraction_surviving1<- cor.test(subset(Transporter_annotations_and_fractions1, Species != "C. bolteae")$transporters, subset(Transporter_annotations_and_fractions1, Species != "C. bolteae")$mean_Fraction_surviving, method="spearman")
+cor_result_fraction_surviving
+cor_result_fraction_benefitting
+
+cor_result_fraction_surviving1
+
+
+# Create the scatterplot, excluding outlier C. bolteae (but with correlation metrics of the complete dataframe)
+p <- ggplot(subset(Transporter_annotations_and_fractions1, Species != "C. bolteae"), aes(x=transporters, y=mean_Fraction_surviving)) +
+  geom_smooth(method=lm, se=TRUE, color="grey30", linetype="dashed", fill="grey80") +  # Lighter grey shade for se
+  geom_point(aes(shape=Gram), size = 3.5, color="grey30", alpha = 0.8) +
+  annotate("text", x = -Inf, y = Inf, vjust = 1, hjust=-0.1,  # Adjusted coordinates for top left corner
+           label = paste("rho = ", round(cor_result_fraction_surviving1$estimate,1),"***"), 
+           #"\np-value = ", format.pval(cor_result_fraction_surviving$p.value, digits = 3)), 
+           size = 4) +
+  labs(x = "Transporters", y = "Average fraction 
+surviving in co-culture", color = "Species") +
+  theme_classic() +
+  theme( # Adjusting sizes as requested
+    axis.title.x = element_text(size = 14), 
+    axis.title.y = element_text(size = 14),  
+    axis.text.x = element_text(size = 12),  
+    axis.text.y = element_text(size = 12),  
+    legend.text = element_text(size = 12),   
+    legend.title = element_text(size = 12)   
+  )
+p
+
+##With annotations, just looking at survivors:
+p <- ggplot(subset(Transporter_annotations_and_fractions1, mean_Fraction_surviving > 0 & Species != "C. bolteae"), aes(x=transporters, y=mean_Fraction_surviving)) +
+  geom_smooth(method=lm, se=TRUE, color="black", linetype="dashed", fill="grey80") +
+  geom_point(aes(shape=Gram), size = 3.5, color="grey40") +
+  annotate("text", x = -Inf, y = Inf, vjust = 1, hjust=-0.1, 
+           label = paste("Rho = ", round(cor_result_fraction_surviving$estimate,1),"***"), 
+           size = 5) +
+  labs(x = "Transporters", y = "Fraction surviving in co-culture", color = "Species") +
+  theme_classic() +
+  theme(
+    axis.title.x = element_text(size = 14),
+    axis.title.y = element_text(size = 14),
+    axis.text.x = element_text(size = 12),
+    axis.text.y = element_text(size = 12),
+    legend.text = element_text(size = 12),
+    legend.title = element_text(size = 12)
+  )
+p
+
+#Adding annotations for specific species
+specific_species <- c("C. ramosum", "E. coli spp", "L. paracasei", "L. plantarum", "S. salivarius", "C. difficile", "S. typhimurium spp", "C. saccharolyticum", "C. comes", "E. lenta", "C. perfringens S107", "P. copri")
+for (species in specific_species) {
+  species_data <- subset(Transporter_annotations_and_fractions1, Species == species)
+  for (i in 1:nrow(species_data)) {
+    p <- p + annotate("text", x = species_data$transporters[i], y = species_data$mean_Fraction_surviving[i], 
+                      label = species, vjust = -1, size = 3, color = "blue") +
+      geom_segment(aes(xend = species_data$transporters[i], yend = species_data$mean_Fraction_surviving[i],
+                       x = species_data$transporters[i], y = species_data$mean_Fraction_surviving[i] + 0.05),
+                   color = "blue")
+  }
+}
+
+p
+
+
+
+##Scatters to display a medium's propensity to support survivors and benefitters
+
+Average_fractions_media <- plot_data_for_Media_across_mixes %>%
+  dplyr::group_by(Medium) %>%
+  dplyr::summarise(
+    mean_Fraction_benefitting = mean(Fraction_benefitting, na.rm = TRUE),
+    mean_Fraction_surviving = mean(Fraction_surviving, na.rm = TRUE)
+  )
+
+##Merge with chemical richness and monoculture survivor richness
+Average_fractions_and_richness_media <- left_join(Scatterplots1_df_B, Average_fractions_media, by = "Medium")
+
+
+#Generate correlations and regression coefficients first
+correlation1 <- cor.test(Average_fractions_and_richness_media$Monoculture_survivor_richness1, Average_fractions_and_richness_media$mean_Fraction_surviving, method = "spearman")
+correlation1a <- cor.test(Average_fractions_and_richness_media$Monoculture_survivor_richness1, Average_fractions_and_richness_media$mean_Fraction_surviving, method = "pearson")
+lm_model1 <- lm(mean_Fraction_surviving ~ Monoculture_survivor_richness1, data = Average_fractions_and_richness_media)
+summary(lm_model1)
+lm_1 <- summary(lm_model1)$r.squared
+
+correlation2 <- cor.test(Average_fractions_and_richness_media$Chemical_richness, Average_fractions_and_richness_media$mean_Fraction_surviving, method = "spearman")
+correlation2a <- cor.test(Average_fractions_and_richness_media$Chemical_richness, Average_fractions_and_richness_media$mean_Fraction_surviving, method = "pearson")
+lm_model2 <- lm(mean_Fraction_surviving ~ Chemical_richness, data = Average_fractions_and_richness_media)
+summary(lm_model2)
+lm_2 <- summary(lm_model2)$r.squared
+
+
+correlation3 <- cor.test(Average_fractions_and_richness_media$Monoculture_survivor_richness1, Average_fractions_and_richness_media$mean_Fraction_benefitting, method = "spearman")
+correlation3a <- cor.test(Average_fractions_and_richness_media$Monoculture_survivor_richness1, Average_fractions_and_richness_media$mean_Fraction_benefitting, method = "pearson")
+lm_model3 <- lm(mean_Fraction_benefitting ~ Monoculture_survivor_richness1, data = Average_fractions_and_richness_media)
+summary(lm_model3)
+lm_3 <- summary(lm_model3)$r.squared
+lm_3
+
+correlation4 <- cor.test(Average_fractions_and_richness_media$Chemical_richness, Average_fractions_and_richness_media$mean_Fraction_benefitting, method = "spearman")
+correlation4a <- cor.test(Average_fractions_and_richness_media$Chemical_richness, Average_fractions_and_richness_media$mean_Fraction_benefitting, method = "pearson")
+lm_model4 <- lm(mean_Fraction_benefitting ~ Chemical_richness, data = Average_fractions_and_richness_media)
+summary(lm_model4)
+lm_4 <- summary(lm_model4)$r.squared
+lm_4
+
+
+plot1 <- ggplot(Average_fractions_and_richness_media, aes(x = Monoculture_survivor_richness1, y = mean_Fraction_surviving, color = Medium)) +
+  geom_smooth(aes(group=1), method = "lm", se = TRUE, color = "white", linetype = "dashed", alpha = 0) + 
+  geom_point(aes(size = Mean_Alpha_div), alpha = 0.8) +
+  annotate("text", x = -Inf, y = Inf, label = paste("       rho = ", round(correlation1$estimate, 2),"ns"), hjust = 0, vjust = 1, size = 6) +
+  scale_color_manual(values=c("black", "#00AFBB", "#2e37fe", "darkorchid1", "green", "#0072B2", "indianred","gold1", "firebrick4", "springgreen3",  "chocolate1","#6C0BA9", "red", "#999999", "magenta"), name="Medium") +
+  scale_size(range = c(1, 10)) +
+  scale_y_continuous(limits = c(0, 0.65)) +  
+  theme_minimal() +
+  labs(x = "Monoculture Survivor Richness", 
+       y = "Mean Fraction Surviving across Mixes",
+       size = "Mean alpha diversity
+across mixes")  +
+  theme(axis.text = element_text(size = 16), 
+        axis.title = element_text(size = 16),
+        legend.title = element_text(size = 16),
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(), 
+        axis.line = element_line(), 
+        legend.text = element_text(size = 14)) +
+  guides(color = guide_legend(override.aes = list(size = 5)))  
+plot1
+
+plot2 <- ggplot(Average_fractions_and_richness_media, aes(x = Chemical_richness, y = mean_Fraction_surviving, color = Medium)) +
+  geom_smooth(aes(group=1), method = "lm", se = TRUE, color = "darkgrey", linetype = "dashed", alpha = 0.2) + 
+  geom_point(aes(size = Mean_Alpha_div), alpha = 0.8) +
+  annotate("text", x = -Inf, y = Inf, label = paste("       rho = ", round(correlation2$estimate, 2),"**"), hjust = 0, vjust = 1, size = 6) +
+  scale_color_manual(values=c("black", "#00AFBB", "#2e37fe", "darkorchid1", "green", "#0072B2", "indianred","gold1", "firebrick4", "springgreen3",  "chocolate1","#6C0BA9", "red", "#999999", "magenta"), name="Medium") +
+  scale_size(range = c(1, 10)) +
+  scale_y_continuous(limits = c(0, 0.65)) +  
+  theme_minimal() +
+  labs(x = "Chemical Richness", 
+       y = "Mean Fraction Surviving across Mixes",
+       size = "Mean alpha diversity
+across mixes")  +
+  theme(axis.text = element_text(size = 16), 
+        axis.title = element_text(size = 16),
+        legend.title = element_text(size = 16),
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(), 
+        axis.line = element_line(), 
+        legend.text = element_text(size = 14)) +
+  guides(color = guide_legend(override.aes = list(size = 5)))  
+plot2
+
+
+
+plot3 <- ggplot(Average_fractions_and_richness_media, aes(x = Monoculture_survivor_richness1, y = mean_Fraction_benefitting, color = Medium)) +
+  geom_smooth(aes(group=1), method = "lm", se = TRUE, color = "darkgrey", linetype = "dashed", alpha = 0.2) + 
+  geom_point(aes(size = Mean_Alpha_div), alpha = 0.8) +
+  annotate("text", x = -Inf, y = Inf, label = paste("       rho = ", round(correlation3$estimate, 2),"**"), hjust = 0, vjust = 1, size = 6) +
+  scale_color_manual(values=c("black", "#00AFBB", "#2e37fe", "darkorchid1", "green", "#0072B2", "indianred","gold1", "firebrick4", "springgreen3",  "chocolate1","#6C0BA9", "red", "#999999", "magenta"), name="Medium") +
+  scale_size(range = c(1, 10)) +
+  scale_y_continuous(limits = c(0.25, 1.1)) +  
+  theme_minimal() +
+  labs(x = "Monoculture Survivor Richness", 
+       y = "Mean Fraction Benefitting across Mixes",
+       size = "Mean alpha diversity
+across mixes")  +
+  theme(axis.text = element_text(size = 16), 
+        axis.title = element_text(size = 16),
+        legend.title = element_text(size = 16),
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(), 
+        axis.line = element_line(), 
+        legend.text = element_text(size = 14)) +
+  guides(color = guide_legend(override.aes = list(size = 5)))  # Override the size of color legend points
+plot3
+
+
+#Calculate the full range of Mean_Alpha_div
+min_alpha_div <- min(Average_fractions_and_richness_media$Mean_Alpha_div, na.rm = TRUE)
+max_alpha_div <- max(Average_fractions_and_richness_media$Mean_Alpha_div, na.rm = TRUE)
+
+Average_fractions_and_richness_media_without_M15B_M16 <- subset(Average_fractions_and_richness_media, Medium != "15B" & Medium != "16")
+correlation3x <- cor.test(Average_fractions_and_richness_media_without_M15B_M16$Monoculture_survivor_richness1, Average_fractions_and_richness_media_without_M15B_M16$mean_Fraction_benefitting, method = "spearman")
+correlation3y <- cor.test(Average_fractions_and_richness_media_without_M15B_M16$Monoculture_survivor_richness1, Average_fractions_and_richness_media_without_M15B_M16$mean_Fraction_benefitting, method = "pearson")
+
+plot4 <- ggplot(Average_fractions_and_richness_media, aes(x = Chemical_richness, y = mean_Fraction_benefitting, color = Medium)) +
+  geom_smooth(aes(group=1), method = "lm", se = TRUE, color = "darkgrey", linetype = "dashed", alpha = 0.2) + 
+  geom_point(aes(size = Mean_Alpha_div), alpha = 0.8) +
+  annotate("text", x = -Inf, y = Inf, label = paste("       rho = ", round(correlation4$estimate, 2),"**"), hjust = 0, vjust = 1, size = 6) +
+  scale_color_manual(values=c("black", "#00AFBB", "#2e37fe", "darkorchid1", "green", "#0072B2", "indianred","gold1", "firebrick4", "springgreen3",  "chocolate1","#6C0BA9", "red", "#999999", "magenta"), name="Medium") +
+  scale_size(range = c(1, 10)) +
+  scale_y_continuous(limits = c(0.25, 1.1)) +  
+  theme_minimal() +
+  labs(x = "Chemical Richness", 
+       y = "Mean Fraction Benefitting across Mixes",
+       size = "Mean alpha diversity
+across mixes")  +
+  theme(axis.text = element_text(size = 16), 
+        axis.title = element_text(size = 16),
+        legend.title = element_text(size = 16),
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(), 
+        axis.line = element_line(), 
+        legend.text = element_text(size = 14)) +
+  guides(color = guide_legend(override.aes = list(size = 5)))  
+plot4
+
+
+correlation5 <- cor.test(Average_fractions_and_richness_media$mean_Fraction_benefitting, Average_fractions_and_richness_media$mean_Fraction_surviving, method = "spearman")
+
+plot5 <- ggplot(Average_fractions_and_richness_media, aes(x = mean_Fraction_surviving, y = mean_Fraction_benefitting, color = Medium)) +
+  geom_abline(slope = -1, intercept = 1, linetype = "solid", color = "slategray", size = 2) +
+  geom_point(aes(size = Mean_Alpha_div), alpha = 0.8) +
+  scale_color_manual(values=c("black", "#00AFBB", "#2e37fe", "darkorchid1", "green", "#0072B2", "indianred","gold1", "firebrick4", "springgreen3",  "chocolate1","#6C0BA9", "red", "#999999", "magenta"), name="Medium") +
+  scale_size(range = c(1, 10)) +
+  annotate("text", x = -Inf, y = Inf, label = paste("       rho = ", round(correlation5$estimate, 2),"**"), hjust = 0, vjust = 1, size = 6) +
+  scale_y_continuous(limits = c(0.2, 1.1), expand = c(0, 0)) +  
+  scale_x_continuous(limits = c(0, 0.7), expand = c(0, 0)) +  
+  theme_minimal() +
+  labs(x = "Mean Fraction Surviving across Mixes", 
+       y = "Mean Fraction Benefitting across Mixes",
+       size = "Mean alpha diversity
+across mixes")  +
+  theme(axis.text = element_text(size = 14), 
+        axis.title = element_text(size = 16),
+        legend.title = element_text(size = 16),
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(), 
+        axis.line = element_line(), 
+        legend.text = element_text(size = 14)) +
+  guides(color = guide_legend(override.aes = list(size = 5))) 
+
+plot5
+
+
+
+#Now with normalised data so that the medium with the highest fraction surviving is assigned 1 as well
+Average_fractions_and_richness_media$norm_Fraction_surviving <- Average_fractions_and_richness_media$mean_Fraction_surviving / max(Average_fractions_and_richness_media$mean_Fraction_surviving)
+Average_fractions_and_richness_media$norm_Fraction_benefitting <- Average_fractions_and_richness_media$mean_Fraction_benefitting / max(Average_fractions_and_richness_media$mean_Fraction_benefitting)
+Average_fractions_and_richness_media$norm_Chemical_richness <- Average_fractions_and_richness_media$Chemical_richness / max(Average_fractions_and_richness_media$Chemical_richness)
+
+
+#Perform the correlation on the normalised data
+correlation5 <- cor.test(Average_fractions_and_richness_media$norm_Fraction_benefitting, Average_fractions_and_richness_media$norm_Fraction_surviving, method = "spearman")
+
+# Create the plot with the normalised data
+plot5 <- ggplot(Average_fractions_and_richness_media, aes(x = norm_Fraction_surviving, y = norm_Fraction_benefitting, color = Medium)) +
+  geom_abline(slope = -1, intercept = 1, linetype = "solid", color = "slategray", size = 2) +
+  geom_point(aes(size = Mean_Alpha_div), alpha = 0.8) +
+  scale_color_manual(values=c("black", "#00AFBB", "#2e37fe", "darkorchid1", "green", "#0072B2", "indianred","gold1", "firebrick4", "springgreen3", "chocolate1","#6C0BA9", "red", "#999999", "magenta"), name="Medium") +
+  scale_size(range = c(1, 10)) + 
+  annotate("text", x = 0, y = 1, label = paste("                        rho = ", round(correlation5$estimate, 2),"**"), hjust = 0, vjust = 1, size = 6) +
+  scale_y_continuous(limits = c(0, 1.1), expand = c(0, 0)) +  
+  scale_x_continuous(limits = c(0, 1.1), expand = c(0, 0)) +  
+  theme_minimal() +
+  labs(x = "Normalized Mean Fraction Surviving across Mixes", 
+       y = "Normalized Mean Fraction Benefitting across Mixes",
+       size = "Mean alpha diversity across mixes")  +
+  theme(axis.text = element_text(size = 14), 
+        axis.title = element_text(size = 16),
+        legend.title = element_text(size = 16),
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(), 
+        axis.line = element_line(), 
+        legend.text = element_text(size = 14)) +
+  guides(color = guide_legend(override.aes = list(size = 5))) 
+
+plot5
+
+
+#####Winner/loser analysis: total overview
+#Remember: we here refer to 'loser' with what in the manuscript is referred to as 'emergent extinction', and 'winner' with what in the manuscript is referred to as 'emergent survival'
+All_mixes_winner_loser_Mono_vs_cocult_Species
+
+All_combinations <-All_mixes_winner_loser_Mono_vs_cocult_Species %>%
+  ungroup() %>%
+  filter(Status %in% c("Winner", "Loser", "Suppressed", "Boosted", "Variable", "No_growth")) %>%
+  summarise(Total_Count = sum(Count, na.rm = TRUE))
+
+Without_no_growth <- All_mixes_winner_loser_Mono_vs_cocult_Species %>%
+  ungroup() %>%
+  filter(Status %in% c("Winner", "Loser", "Suppressed", "Boosted","Variable")) %>%
+  summarise(Total_Count = sum(Count, na.rm = TRUE))
+
+Any_consistent_effect <- All_mixes_winner_loser_Mono_vs_cocult_Species %>%
+  ungroup() %>%
+  filter(Status %in% c("Winner", "Loser", "Suppressed", "Boosted")) %>%
+  summarise(Total_Count = sum(Count, na.rm = TRUE))
+
+winner_count <- All_mixes_winner_loser_Mono_vs_cocult_Species %>%
+  ungroup() %>%
+  filter(Status == "Winner") %>%
+  summarise(Total_Count = sum(Count, na.rm = TRUE))
+
+loser_count <- All_mixes_winner_loser_Mono_vs_cocult_Species %>%
+  ungroup() %>%
+  filter(Status == "Loser") %>%
+  summarise(Total_Count = sum(Count, na.rm = TRUE))
+
+#Winner status across poor versus rich media 
+
+media_list <- c("15B", "13", "16", "14", "1")
+winner_count_for_selected_media <- plot_data_for_Media_across_mixes %>%
+  filter(Status == "Winner" & Medium %in% media_list) %>%
+  summarise(Total_Count = sum(Count))
+print(winner_count_for_selected_media)
+
+media_list <- c("2", "5", "10", "7", "4", "11", "3", "9", "8")
+winner_count_for_other_media <- plot_data_for_Media_across_mixes %>%
+  filter(Status == "Winner" & Medium %in% media_list) %>%
+  summarise(Total_Count = sum(Count))
+print(winner_count_for_other_media)
+
+##Loser status across poor vs. rich media
+
+media_list <- c("15B", "13", "16", "14", "1")
+loser_count_for_selected_media <- plot_data_for_Media_across_mixes %>%
+  filter(Status == "Loser" & Medium %in% media_list) %>%
+  summarise(Total_Count = sum(Count))
+print(loser_count_for_selected_media)
+
+media_list <- c("2","5", "10", "7", "4", "11", "3", "9", "8")
+loser_count_for_other_media <- plot_data_for_Media_across_mixes %>%
+  filter(Status == "Loser" & Medium %in% media_list) %>%
+  summarise(Total_Count = sum(Count))
+print(loser_count_for_other_media)
+
+
+
+
+#density plot of metrics
+ggplot(Average_fractions_and_richness_media, aes(x = Chemical_richness)) +
+  geom_density(fill = "blue", alpha = 0.5) +  
+  labs(x = "Chemical Richness", y = "Density") +
+  theme_minimal()  # Optional: Adds a minimal theme
+
+ggplot(Average_fractions_and_richness_media, aes(x = Monoculture_survivor_richness)) +
+  geom_density(fill = "blue", alpha = 0.5) +  
+  labs(x = "Monoculture Survivor Richness", y = "Density") +
+  theme_minimal()  # Optional: Adds a minimal theme
+
+#ordered bar charts
+Average_fractions_and_richness_media <- Average_fractions_and_richness_media %>%
+  arrange(Chemical_richness) %>%
+  mutate(Medium = factor(Medium, levels = unique(Medium)))
+
+# Chemical richness
+ggplot(Average_fractions_and_richness_media, aes(x = Medium, y = Chemical_richness, fill = "slategray3")) +
+  geom_bar(stat = "identity") +
+  labs(x = "Medium", y = "Chemical Richness") +
+  scale_fill_identity() +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        panel.grid.minor = element_blank())
+
+stacked_plot_medium_components <- ggplot(Normalised_medium_components_summed_per_class_long, aes(x = Order, y = Value, fill = Class)) +
+  geom_bar(stat = "identity", position = "stack", alpha = 0.8) +
+  scale_x_discrete(labels = ordered_medium) +
+  scale_fill_manual(values = color_scheme) +
+  labs(y = "Chemical richness", fill = "Component") +
+  theme_minimal() +  # Adds minimal theme with axes
+  theme(
+    axis.text.x = element_text(angle = 30, hjust = 1),
+    legend.text = element_text(size = 12)
+  )
+
+stacked_plot_medium_components
+
+
+
+#Monoculture_survivor_richness
+Average_fractions_and_richness_media$Medium <- paste0('M', Average_fractions_and_richness_media$Medium)
+Average_fractions_and_richness_media$Medium <- sub('^M', '', Average_fractions_and_richness_media$Medium)
+
+Average_fractions_and_richness_media <- Average_fractions_and_richness_media %>%
+  arrange(Monoculture_survivor_richness) %>%
+  mutate(Medium = factor(Medium, levels = unique(Medium)))
+
+
+#Now plot without the 'M' in the Medium labels
+ggplot(Average_fractions_and_richness_media, aes(x = Medium, y = Monoculture_survivor_richness)) +
+  geom_bar(stat = "identity", alpha = 0.7) +
+  labs(x = "Medium", y = "Monoculture survivor richness") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
