@@ -1,0 +1,223 @@
+SampleID	triplicates	Medium	Inoculation Mix	keySpecies
+Med3Mix11	1	3	1	- All
+Med3Mix21	1	3	2	- B. uniformis
+Med3Mix31	1	3	3	- B. fragilis
+Med3Mix41	1	3	4	- B. thetaiotaomicron
+Med3Mix51	1	3	5	- B. hansenii
+Med3Mix61	1	3	6	- C. ramosum
+Med3Mix71	1	3	7	- B. adolescentis
+Med3Mix81	1	3	8	- E. lenta
+Med3Mix12	2	3	1	- All
+Med3Mix22	2	3	2	- B. uniformis
+Med3Mix32	2	3	3	- B. fragilis
+Med3Mix42	2	3	4	- B. thetaiotaomicron
+Med3Mix52	2	3	5	- B. hansenii
+Med3Mix62	2	3	6	- C. ramosum
+Med3Mix72	2	3	7	- B. adolescentis
+Med3Mix82	2	3	8	- E. lenta
+Med3Mix13	3	3	1	- All
+Med3Mix23	3	3	2	- B. uniformis
+Med3Mix33	3	3	3	- B. fragilis
+Med3Mix43	3	3	4	- B. thetaiotaomicron
+Med3Mix53	3	3	5	- B. hansenii
+Med3Mix63	3	3	6	- C. ramosum
+Med3Mix73	3	3	7	- B. adolescentis
+Med3Mix83	3	3	8	- E. lenta
+Med3Mix91	1	3	9	- C. bolteae
+Med3Mix101	1	3	10	- C. saccharolyticum
+Med3Mix111	1	3	11	- S. salivarius
+Med3Mix121	1	3	12	- L. paracase
+Med3Mix131	1	3	13	- R. gnavus
+Med3Mix141	1	3	14	- C. comes
+Med3Mix151	1	3	15	- E. coli IAI1
+Med3Mix161	1	3	16	+ All
+Med3Mix92	2	3	9	- C. bolteae
+Med3Mix102	2	3	10	- C. saccharolyticum
+Med3Mix112	2	3	11	- S. salivarius
+Med3Mix122	2	3	12	- L. paracase
+Med3Mix132	2	3	13	- R. gnavus
+Med3Mix142	2	3	14	- C. comes
+Med3Mix152	2	3	15	- E. coli IAI1
+Med3Mix162	2	3	16	+ All
+Med3Mix93	3	3	9	- C. bolteae
+Med3Mix103	3	3	10	- C. saccharolyticum
+Med3Mix113	3	3	11	- S. salivarius
+Med3Mix123	3	3	12	- L. paracase
+Med3Mix133	3	3	13	- R. gnavus
+Med3Mix143	3	3	14	- C. comes
+Med3Mix153	3	3	15	- E. coli IAI1
+Med3Mix163	3	3	16	+ All
+Med3Mix171	1	3	17	+ C. perfringens
+Med3Mix181	1	3	18	+ B. dorei
+Med3Mix191	1	3	19	+ B. eggerthii
+Med3Mix201	1	3	20	+ B. clarus
+Med3Mix211	1	3	21	+ E. limosum
+Med3Mix221	1	3	22	+ S. parasanguinis
+Med3Mix231	1	3	23	+ C. aerofaciens
+Med3Mix241	1	3	24	+ P. distasonis
+Med3Mix172	2	3	17	+ C. perfringens
+Med3Mix182	2	3	18	+ B. dorei
+Med3Mix192	2	3	19	+ B. eggerthii
+Med3Mix202	2	3	20	+ B. clarus
+Med3Mix212	2	3	21	+ E. limosum
+Med3Mix222	2	3	22	+ S. parasanguinis
+Med3Mix232	2	3	23	+ C. aerofaciens
+Med3Mix242	2	3	24	+ P. distasonis
+Med3Mix173	3	3	17	+ C. perfringens
+Med3Mix183	3	3	18	+ B. dorei
+Med3Mix193	3	3	19	+ B. eggerthii
+Med3Mix203	3	3	20	+ B. clarus
+Med3Mix213	3	3	21	+ E. limosum
+Med3Mix223	3	3	22	+ S. parasanguinis
+Med3Mix233	3	3	23	+ C. aerofaciens
+Med3Mix243	3	3	24	+ P. distasonis
+Med3Mix251	1	3	25	+ E. eligens
+Med3Mix261	1	3	26	+ D. formicigenerans
+Med3Mix271	1	3	27	+ R. hominis
+Med3Mix281	1	3	28	+ L. plantarum
+Med3Mix252	2	3	25	+ E. eligens
+Med3Mix262	2	3	26	+ D. formicigenerans
+Med3Mix272	2	3	27	+ R. hominis
+Med3Mix282	2	3	28	+ L. plantarum
+Med3Mix253	3	3	25	+ E. eligens
+Med3Mix263	3	3	26	+ D. formicigenerans
+Med3Mix273	3	3	27	+ R. hominis
+Med3Mix283	3	3	28	+ L. plantarum
+Med8Mix11	1	8	1	- All
+Med8Mix21	1	8	2	- B. uniformis
+Med8Mix31	1	8	3	- B. fragilis
+Med8Mix41	1	8	4	- B. thetaiotaomicron
+Med8Mix51	1	8	5	- B. hansenii
+Med8Mix61	1	8	6	- C. ramosum
+Med8Mix71	1	8	7	- B. adolescentis
+Med8Mix81	1	8	8	- E. lenta
+Med8Mix12	2	8	1	- All
+Med8Mix22	2	8	2	- B. uniformis
+Med8Mix32	2	8	3	- B. fragilis
+Med8Mix42	2	8	4	- B. thetaiotaomicron
+Med8Mix52	2	8	5	- B. hansenii
+Med8Mix62	2	8	6	- C. ramosum
+Med8Mix72	2	8	7	- B. adolescentis
+Med8Mix82	2	8	8	- E. lenta
+Med8Mix13	3	8	1	- All
+Med8Mix23	3	8	2	- B. uniformis
+Med8Mix33	3	8	3	- B. fragilis
+Med8Mix43	3	8	4	- B. thetaiotaomicron
+Med8Mix53	3	8	5	- B. hansenii
+Med8Mix63	3	8	6	- C. ramosum
+Med8Mix73	3	8	7	- B. adolescentis
+Med8Mix83	3	8	8	- E. lenta
+Med8Mix91	1	8	9	- C. bolteae
+Med8Mix101	1	8	10	- C. saccharolyticum
+Med8Mix111	1	8	11	- S. salivarius
+Med8Mix121	1	8	12	- L. paracase
+Med8Mix131	1	8	13	- R. gnavus
+Med8Mix141	1	8	14	- C. comes
+Med8Mix151	1	8	15	- E. coli IAI1
+Med8Mix161	1	8	16	+ All
+Med8Mix92	2	8	9	- C. bolteae
+Med8Mix102	2	8	10	- C. saccharolyticum
+Med8Mix112	2	8	11	- S. salivarius
+Med8Mix122	2	8	12	- L. paracase
+Med8Mix132	2	8	13	- R. gnavus
+Med8Mix142	2	8	14	- C. comes
+Med8Mix152	2	8	15	- E. coli IAI1
+Med8Mix162	2	8	16	+ All
+Med8Mix93	3	8	9	- C. bolteae
+Med8Mix103	3	8	10	- C. saccharolyticum
+Med8Mix113	3	8	11	- S. salivarius
+Med8Mix123	3	8	12	- L. paracase
+Med8Mix143	3	8	14	- C. comes
+Med8Mix153	3	8	15	- E. coli IAI1
+Med8Mix163	3	8	16	+ All
+Med8Mix171	1	8	17	+ C. perfringens
+Med8Mix181	1	8	18	+ B. dorei
+Med8Mix191	1	8	19	+ B. eggerthii
+Med8Mix201	1	8	20	+ B. clarus
+Med8Mix211	1	8	21	+ E. limosum
+Med8Mix221	1	8	22	+ S. parasanguinis
+Med8Mix231	1	8	23	+ C. aerofaciens
+Med8Mix241	1	8	24	+ P. distasonis
+Med8Mix172	2	8	17	+ C. perfringens
+Med8Mix182	2	8	18	+ B. dorei
+Med8Mix192	2	8	19	+ B. eggerthii
+Med8Mix202	2	8	20	+ B. clarus
+Med8Mix212	2	8	21	+ E. limosum
+Med8Mix232	2	8	23	+ C. aerofaciens
+Med8Mix242	2	8	24	+ P. distasonis
+Med8Mix173	3	8	17	+ C. perfringens
+Med8Mix183	3	8	18	+ B. dorei
+Med8Mix193	3	8	19	+ B. eggerthii
+Med8Mix203	3	8	20	+ B. clarus
+Med8Mix213	3	8	21	+ E. limosum
+Med8Mix223	3	8	22	+ S. parasanguinis
+Med8Mix233	3	8	23	+ C. aerofaciens
+Med8Mix243	3	8	24	+ P. distasonis
+Med8Mix251	1	8	25	+ E. eligens
+Med8Mix261	1	8	26	+ D. formicigenerans
+Med8Mix271	1	8	27	+ R. hominis
+Med8Mix281	1	8	28	+ L. plantarum
+Med8Mix252	2	8	25	+ E. eligens
+Med8Mix262	2	8	26	+ D. formicigenerans
+Med8Mix272	2	8	27	+ R. hominis
+Med8Mix282	2	8	28	+ L. plantarum
+Med8Mix253	3	8	25	+ E. eligens
+Med8Mix263	3	8	26	+ D. formicigenerans
+Med8Mix273	3	8	27	+ R. hominis
+Med8Mix283	3	8	28	+ L. plantarum
+InoculumMix11	1	ino	1	- All
+InoculumMix21	1	ino	2	- B. uniformis
+InoculumMix31	1	ino	3	- B. fragilis
+InoculumMix41	1	ino	4	- B. thetaiotaomicron
+InoculumMix51	1	ino	5	- B. hansenii
+InoculumMix61	1	ino	6	- C. ramosum
+InoculumMix71	1	ino	7	- B. adolescentis
+InoculumMix81	1	ino	8	- E. lenta
+InoculumMix12	2	ino	1	- All
+InoculumMix22	2	ino	2	- B. uniformis
+InoculumMix32	2	ino	3	- B. fragilis
+InoculumMix42	2	ino	4	- B. thetaiotaomicron
+InoculumMix52	2	ino	5	- B. hansenii
+InoculumMix62	2	ino	6	- C. ramosum
+InoculumMix72	2	ino	7	- B. adolescentis
+InoculumMix82	2	ino	8	- E. lenta
+InoculumMix91	1	ino	9	- C. bolteae
+InoculumMix101	1	ino	10	- C. saccharolyticum
+InoculumMix111	1	ino	11	- S. salivarius
+InoculumMix121	1	ino	12	- L. paracase
+InoculumMix131	1	ino	13	- R. gnavus
+InoculumMix141	1	ino	14	- C. comes
+InoculumMix151	1	ino	15	- E. coli IAI1
+InoculumMix161	1	ino	16	+ All
+InoculumMix92	2	ino	9	- C. bolteae
+InoculumMix102	2	ino	10	- C. saccharolyticum
+InoculumMix112	2	ino	11	- S. salivarius
+InoculumMix122	2	ino	12	- L. paracase
+InoculumMix132	2	ino	13	- R. gnavus
+InoculumMix142	2	ino	14	- C. comes
+InoculumMix152	2	ino	15	- E. coli IAI1
+InoculumMix162	2	ino	16	+ All
+InoculumMix171	1	ino	17	+ C. perfringens
+InoculumMix181	1	ino	18	+ B. dorei
+InoculumMix191	1	ino	19	+ B. eggerthii
+InoculumMix201	1	ino	20	+ B. clarus
+InoculumMix211	1	ino	21	+ E. limosum
+InoculumMix221	1	ino	22	+ S. parasanguinis
+InoculumMix231	1	ino	23	+ C. aerofaciens
+InoculumMix241	1	ino	24	+ P. distasonis
+InoculumMix172	2	ino	17	+ C. perfringens
+InoculumMix182	2	ino	18	+ B. dorei
+InoculumMix192	2	ino	19	+ B. eggerthii
+InoculumMix202	2	ino	20	+ B. clarus
+InoculumMix212	2	ino	21	+ E. limosum
+InoculumMix222	2	ino	22	+ S. parasanguinis
+InoculumMix232	2	ino	23	+ C. aerofaciens
+InoculumMix242	2	ino	24	+ P. distasonis
+InoculumMix251	1	ino	25	+ E. eligens
+InoculumMix261	1	ino	26	+ D. formicigenerans
+InoculumMix271	1	ino	27	+ R. hominis
+InoculumMix281	1	ino	28	+ L. plantarum
+InoculumMix252	2	ino	25	+ E. eligens
+InoculumMix262	2	ino	26	+ D. formicigenerans
+InoculumMix272	2	ino	27	+ R. hominis
+InoculumMix282	2	ino	28	+ L. plantarum
