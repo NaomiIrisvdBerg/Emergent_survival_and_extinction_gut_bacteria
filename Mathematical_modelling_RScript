@@ -1,0 +1,701 @@
+#System of ODEs in R to model emergent survival and extinction of species within gut bacterial communities across 14 defined media: 
+#Initial ODs: as per Mix1 inoculum abundance*0.01(OD), dilution rate=0.02, transfers = 9
+#Specify selected medium at line 392
+
+# List of packages used in this script
+packages <- c("deSolve", "reshape2", "dplyr", "readr", "tidyr", "ggplot2")
+
+# Loop through the list of needed packages
+for (pkg in packages) {
+  if (!pkg %in% rownames(installed.packages())) {
+    install.packages(pkg)
+  }
+}
+
+# Load the libraries
+library(deSolve)
+library(reshape2)
+library(dplyr)
+library(readr)
+library(tidyr)
+library(ggplot2)
+
+#Files to be imported, change directory as appropriate
+#Monoculture kinetics file (averaged across taxa grouped based on 16S distinction, see main script for process)
+monocultures_growth_final <- read_csv("Documents/monocultures_growth_final.csv")
+#Relative abundance data, see main script for formatting/pre-processing steps taken
+TrA1_relative_abundance_table_t <- read_csv("Documents/TrA1_relative_abundance_table_t.csv")
+
+#Transpose using tidyr package
+#transposing step 1
+long_format <- pivot_longer(
+  TrA1_relative_abundance_table_t,
+  cols = -Name,
+  names_to = "Code",
+  values_to = "Value"
+)
+#transposing step 2
+TrA1_relative_abundance_table_T <- pivot_wider(
+  long_format,
+  names_from = Name,
+  values_from = Value
+)
+
+
+##Start model
+
+rootfun <- function(t, x, params){
+  return(min(x) - -1)
+}
+
+#Make state variables in accordance with unique(monocultures_growth_final$Species)
+closed.sir.model <- function (t, x, params) {
+  ## first extract the state variables
+  A._odontolyticus <- x[1]
+  B._adolescentis <- x[2]
+  B._crossotus <- x[3]
+  B._hansenii <- x[4]
+  B._longum_subsp._longum <- x[5]
+  B._thetaiotaomicron <- x[6]
+  B._uniformis <- x[7]
+  B._vulgatus <- x[8]
+  C._bolteae <-x[9]
+  C._comes <-x[10]
+  C._perfringens_S107 <-x[11]
+  C._ramosum <-x[12]
+  C._saccharolyticum <-x[13]
+  D._piger <- x[14]
+  E._lenta <-x[15]
+  E._rectale <-x[16]
+  E._siraeum <-x[17]
+  F._nucleatum_subsp._animalis <-x[18]
+  F._nucleatum_subsp._nucleatum <-x[19]
+  H._parainfluenzae <-x[20]
+  L._gasseri <-x[21]
+  L._lactis <-x[22]
+  L._paracasei <-x[23]
+  L._plantarum <-x[24]
+  P._copri <-x[25]
+  C._difficile <-x[26]
+  P._melaninogenica <-x[27]
+  R._gnavus <-x[28]
+  S._salivarius <-x[29]
+  E._coli_spp <-x[30]
+  B._animalis_subsp._lactis_spp <-x[31]
+  S._typhimurium_spp <-x[32]
+  V._cholerae_spp <- x[33]
+  B._fragilis_spp <- x[34]
+  
+  
+  ## now extract the parameters
+  r_A._odontolyticus <- params[["r_A._odontolyticus"]]
+  r_B._adolescentis <- params[["r_B._adolescentis"]]
+  r_B._crossotus <- params[["r_B._crossotus"]]
+  r_B._hansenii <- params[["r_B._hansenii"]]
+  r_B._longum_subsp._longum <- params[["r_B._longum_subsp._longum"]]
+  r_B._thetaiotaomicron <- params[["r_B._thetaiotaomicron"]]
+  r_B._uniformis <- params[["r_B._uniformis"]]
+  r_B._vulgatus <- params[["r_B._vulgatus"]]
+  r_C._bolteae <- params[["r_C._bolteae"]]
+  r_C._comes <- params[["r_C._comes"]]
+  r_C._perfringens_S107 <- params[["r_C._perfringens_S107"]]
+  r_C._ramosum <- params[["r_C._ramosum"]]
+  r_C._saccharolyticum <- params[["r_C._saccharolyticum"]]
+  r_D._piger <- params[["r_D._piger"]]
+  r_E._lenta <- params[["r_E._lenta"]]
+  r_E._rectale <- params[["r_E._rectale"]]
+  r_E._siraeum <- params[["r_E._siraeum"]]
+  r_F._nucleatum_subsp._animalis <- params[["r_F._nucleatum_subsp._animalis"]]
+  r_F._nucleatum_subsp._nucleatum <- params[["r_F._nucleatum_subsp._nucleatum"]]
+  r_H._parainfluenzae <- params[["r_H._parainfluenzae"]]
+  r_L._gasseri <- params[["r_L._gasseri"]]
+  r_L._lactis <- params[["r_L._lactis"]]
+  r_L._paracasei <- params[["r_L._paracasei"]]
+  r_L._plantarum <- params[["r_L._plantarum"]]
+  r_P._copri <- params[["r_P._copri"]]
+  r_C._difficile <- params[["r_C._difficile"]]
+  r_P._melaninogenica <- params[["r_P._melaninogenica"]]
+  r_R._gnavus <- params[["r_R._gnavus"]]
+  r_S._salivarius <- params[["r_S._salivarius"]]
+  r_E._coli_spp <- params[["r_E._coli_spp"]]
+  r_B._animalis_subsp._lactis_spp <- params[["r_B._animalis_subsp._lactis_spp"]]
+  r_S._typhimurium_spp <- params[["r_S._typhimurium_spp"]]
+  r_V._cholerae_spp <- params[["r_V._cholerae_spp"]]
+  r_B._fragilis_spp <- params[["r_B._fragilis_spp"]]
+  
+  K_A._odontolyticus <- params[["K_A._odontolyticus"]]
+  K_B._adolescentis <- params[["K_B._adolescentis"]]
+  K_B._crossotus <- params[["K_B._crossotus"]]
+  K_B._hansenii <- params[["K_B._hansenii"]]
+  K_B._longum_subsp._longum <- params[["K_B._longum_subsp._longum"]]
+  K_B._thetaiotaomicron <- params[["K_B._thetaiotaomicron"]]
+  K_B._uniformis <- params[["K_B._uniformis"]]
+  K_B._vulgatus <- params[["K_B._vulgatus"]]
+  K_C._bolteae <- params[["K_C._bolteae"]]
+  K_C._comes <- params[["K_C._comes"]]
+  K_C._perfringens_S107 <- params[["K_C._perfringens_S107"]]
+  K_C._ramosum <- params[["K_C._ramosum"]]
+  K_C._saccharolyticum <- params[["K_C._saccharolyticum"]]
+  K_D._piger <- params[["K_D._piger"]]
+  K_E._lenta <- params[["K_E._lenta"]]
+  K_E._rectale <- params[["K_E._rectale"]]
+  K_E._siraeum <- params[["K_E._siraeum"]]
+  K_F._nucleatum_subsp._animalis <- params[["K_F._nucleatum_subsp._animalis"]]
+  K_F._nucleatum_subsp._nucleatum <- params[["K_F._nucleatum_subsp._nucleatum"]]
+  K_H._parainfluenzae <- params[["K_H._parainfluenzae"]]
+  K_L._gasseri <- params[["K_L._gasseri"]]
+  K_L._lactis <- params[["K_L._lactis"]]
+  K_L._paracasei <- params[["K_L._paracasei"]]
+  K_L._plantarum <- params[["K_L._plantarum"]]
+  K_P._copri <- params[["K_P._copri"]]
+  K_C._difficile <- params[["K_C._difficile"]]
+  K_P._melaninogenica <- params[["K_P._melaninogenica"]]
+  K_R._gnavus <- params[["K_R._gnavus"]]
+  K_S._salivarius <- params[["K_S._salivarius"]]
+  K_E._coli_spp <- params[["K_E._coli_spp"]]
+  K_B._animalis_subsp._lactis_spp <- params[["K_B._animalis_subsp._lactis_spp"]]
+  K_S._typhimurium_spp <- params[["K_S._typhimurium_spp"]]
+  K_V._cholerae_spp <- params[["K_V._cholerae_spp"]]
+  K_B._fragilis_spp <- params[["K_B._fragilis_spp"]]
+  
+  
+  
+  ## now code the model equations
+  dA._odontolyticusdt <- ifelse(K_A._odontolyticus == 0 | !is.numeric(A._odontolyticus), 0, r_A._odontolyticus * (1 - (A._odontolyticus / K_A._odontolyticus)) * A._odontolyticus)
+  dB._adolescentisdt <- ifelse(K_B._adolescentis == 0 | !is.numeric(B._adolescentis), 0, r_B._adolescentis * (1 - (B._adolescentis / K_B._adolescentis)) * B._adolescentis)
+  dB._crossotusdt <- ifelse(K_B._crossotus == 0 | !is.numeric(B._crossotus), 0, r_B._crossotus * (1 - (B._crossotus / K_B._crossotus)) * B._crossotus)
+  dB._hanseniidt <- ifelse(K_B._hansenii == 0 | !is.numeric(B._hansenii), 0, r_B._hansenii * (1 - (B._hansenii / K_B._hansenii)) * B._hansenii)
+  dB._longum_subsp._longumdt <- ifelse(K_B._longum_subsp._longum == 0 | !is.numeric(B._longum_subsp._longum), 0, r_B._longum_subsp._longum * (1 - (B._longum_subsp._longum / K_B._longum_subsp._longum)) * B._longum_subsp._longum)
+  dB._thetaiotaomicrondt <- ifelse(K_B._thetaiotaomicron == 0 | !is.numeric(B._thetaiotaomicron), 0, r_B._thetaiotaomicron * (1 - (B._thetaiotaomicron / K_B._thetaiotaomicron)) * B._thetaiotaomicron)
+  dB._uniformisdt <- ifelse(K_B._uniformis == 0 | !is.numeric(B._uniformis), 0, r_B._uniformis * (1 - (B._uniformis / K_B._uniformis)) * B._uniformis)
+  dB._vulgatusdt <- ifelse(K_B._vulgatus == 0 | !is.numeric(B._vulgatus), 0, r_B._vulgatus * (1 - (B._vulgatus / K_B._vulgatus)) * B._vulgatus)
+  dC._bolteaedt <- ifelse(K_C._bolteae == 0 | !is.numeric(C._bolteae), 0, r_C._bolteae * (1 - (C._bolteae / K_C._bolteae)) * C._bolteae)
+  dC._comesdt <- ifelse(K_C._comes == 0 | !is.numeric(C._comes), 0, r_C._comes * (1 - (C._comes / K_C._comes)) * C._comes)
+  dC._perfringens_S107dt <- ifelse(K_C._perfringens_S107 == 0 | !is.numeric(C._perfringens_S107), 0, r_C._perfringens_S107 * (1 - (C._perfringens_S107 / K_C._perfringens_S107)) * C._perfringens_S107)
+  dC._ramosumdt <- ifelse(K_C._ramosum == 0 | !is.numeric(C._ramosum), 0, r_C._ramosum * (1 - (C._ramosum / K_C._ramosum)) * C._ramosum)
+  dC._saccharolyticumdt <- ifelse(K_C._saccharolyticum == 0 | !is.numeric(C._saccharolyticum), 0, r_C._saccharolyticum * (1 - (C._saccharolyticum / K_C._saccharolyticum)) * C._saccharolyticum)
+  dD._pigerdt <- ifelse(K_D._piger == 0 | !is.numeric(D._piger), 0, r_D._piger * (1 - (D._piger / K_D._piger)) * D._piger)
+  dE._lentadt <- ifelse(K_E._lenta == 0 | !is.numeric(E._lenta), 0, r_E._lenta * (1 - (E._lenta / K_E._lenta)) * E._lenta)
+  dE._rectaledt <- ifelse(K_E._rectale == 0 | !is.numeric(E._rectale), 0, r_E._rectale * (1 - (E._rectale / K_E._rectale)) * E._rectale)
+  dE._siraeumdt <- ifelse(K_E._siraeum == 0 | !is.numeric(E._siraeum), 0, r_E._siraeum * (1 - (E._siraeum / K_E._siraeum)) * E._siraeum)
+  dF._nucleatum_subsp._animalisdt <- ifelse(K_F._nucleatum_subsp._animalis == 0 | !is.numeric(F._nucleatum_subsp._animalis), 0, r_F._nucleatum_subsp._animalis * (1 - (F._nucleatum_subsp._animalis / K_F._nucleatum_subsp._animalis)) * F._nucleatum_subsp._animalis)
+  dF._nucleatum_subsp._nucleatumdt <- ifelse(K_F._nucleatum_subsp._nucleatum == 0 | !is.numeric(F._nucleatum_subsp._nucleatum), 0, r_F._nucleatum_subsp._nucleatum * (1 - (F._nucleatum_subsp._nucleatum / K_F._nucleatum_subsp._nucleatum)) * F._nucleatum_subsp._nucleatum)
+  dH._parainfluenzaedt <- ifelse(K_H._parainfluenzae == 0 | !is.numeric(H._parainfluenzae), 0, r_H._parainfluenzae * (1 - (H._parainfluenzae / K_H._parainfluenzae)) * H._parainfluenzae)
+  dL._gasseridt <- ifelse(K_L._gasseri == 0 | !is.numeric(L._gasseri), 0, r_L._gasseri * (1 - (L._gasseri / K_L._gasseri)) * L._gasseri)
+  dL._lactisdt <- ifelse(K_L._lactis == 0 | !is.numeric(L._lactis), 0, r_L._lactis * (1 - (L._lactis / K_L._lactis)) * L._lactis)
+  dL._paracaseidt <- ifelse(K_L._paracasei == 0 | !is.numeric(L._paracasei), 0, r_L._paracasei * (1 - (L._paracasei / K_L._paracasei)) * L._paracasei)
+  dL._plantarumdt <- ifelse(K_L._plantarum == 0 | !is.numeric(L._plantarum), 0, r_L._plantarum * (1 - (L._plantarum / K_L._plantarum)) * L._plantarum)
+  dP._copridt <- ifelse(K_P._copri == 0 | !is.numeric(P._copri), 0, r_P._copri * (1 - (P._copri / K_P._copri)) * P._copri)
+  dC._difficiledt <- ifelse(K_C._difficile == 0 | !is.numeric(C._difficile), 0, r_C._difficile * (1 - (C._difficile / K_C._difficile)) * C._difficile)
+  dP._melaninogenicadt <- ifelse(K_P._melaninogenica == 0 | !is.numeric(P._melaninogenica), 0, r_P._melaninogenica * (1 - (P._melaninogenica / K_P._melaninogenica)) * P._melaninogenica)
+  dR._gnavusdt <- ifelse(K_R._gnavus == 0 | !is.numeric(R._gnavus), 0, r_R._gnavus * (1 - (R._gnavus / K_R._gnavus)) * R._gnavus)
+  dS._salivariusdt <- ifelse(K_S._salivarius == 0 | !is.numeric(S._salivarius), 0, r_S._salivarius * (1 - (S._salivarius / K_S._salivarius)) * S._salivarius)
+  dE._coli_sppdt <- ifelse(K_E._coli_spp == 0 | !is.numeric(E._coli_spp), 0, r_E._coli_spp * (1 - (E._coli_spp / K_E._coli_spp)) * E._coli_spp)
+  dB._animalis_subsp._lactis_sppdt <- ifelse(K_B._animalis_subsp._lactis_spp == 0 | !is.numeric(B._animalis_subsp._lactis_spp), 0, r_B._animalis_subsp._lactis_spp * (1 - (B._animalis_subsp._lactis_spp / K_B._animalis_subsp._lactis_spp)) * B._animalis_subsp._lactis_spp)
+  dS._typhimurium_sppdt <- ifelse(K_S._typhimurium_spp == 0 | !is.numeric(S._typhimurium_spp), 0, r_S._typhimurium_spp * (1 - (S._typhimurium_spp / K_S._typhimurium_spp)) * S._typhimurium_spp)
+  dV._cholerae_sppdt <- ifelse(K_V._cholerae_spp == 0 | !is.numeric(V._cholerae_spp), 0, r_V._cholerae_spp * (1 - (V._cholerae_spp / K_V._cholerae_spp)) * V._cholerae_spp)
+  dB._fragilis_sppdt <- ifelse(K_B._fragilis_spp == 0 | !is.numeric(B._fragilis_spp), 0, r_B._fragilis_spp * (1 - (B._fragilis_spp / K_B._fragilis_spp)) * B._fragilis_spp)
+  
+  
+  
+  
+  ## combine results into a single vector
+  dxdt <- c(dA._odontolyticusdt, dB._adolescentisdt, dB._crossotusdt, dB._hanseniidt, dB._longum_subsp._longumdt, dB._thetaiotaomicrondt, dB._uniformisdt, dB._vulgatusdt, dC._bolteaedt, dC._comesdt, dC._perfringens_S107dt, dC._ramosumdt, dC._saccharolyticumdt, dD._pigerdt, dE._lentadt, dE._rectaledt, dE._siraeumdt, dF._nucleatum_subsp._animalisdt, dF._nucleatum_subsp._nucleatumdt, dH._parainfluenzaedt, dL._gasseridt, dL._lactisdt, dL._paracaseidt, dL._plantarumdt, dP._copridt, dC._difficiledt, dP._melaninogenicadt, dR._gnavusdt, dS._salivariusdt, dE._coli_sppdt, dB._animalis_subsp._lactis_sppdt, dS._typhimurium_sppdt, dV._cholerae_sppdt, dB._fragilis_sppdt)
+  ## return result as a list!
+  list(dxdt)
+}
+
+#we include everyone who was non-zero in any of the inoculum replicates
+times <- seq(from=0,to=48,by=0.05)
+#Check inoculum replicates for Mix1
+#We will use TrA1_relative_abundance_table_t, which was formulated in the main script from the original relative abundance table
+#View(TrA1_relative_abundance_table_t)
+
+TrA1_relative_abundance_table_t2 <- TrA1_relative_abundance_table_t[, c(1:4)]
+
+
+# Calculate mean and standard deviation for each species in the inoculum 
+species_stats <- TrA1_relative_abundance_table_t2 %>%
+  rowwise() %>%
+  dplyr::mutate(
+    mean_abundance = mean(c_across(TrA1_InoculumMix11:TrA1_InoculumMix13) * 0.01, na.rm = TRUE),
+    sd_abundance = sd(c_across(TrA1_InoculumMix11:TrA1_InoculumMix13) * 0.01, na.rm = TRUE)
+  ) %>%
+  select(Name, mean_abundance, sd_abundance)
+
+# Format for the code for initial conditions
+xstart_code <- species_stats %>%
+  mutate(
+    formatted = paste0(Name, " = abs(rnorm(1, mean=", mean_abundance, ", sd=", sd_abundance, "))")
+  ) %>%
+  pull(formatted)
+
+# Printing the formatted code for initial conditions
+cat(xstart_code, sep = "\n")
+
+xstart <- c(  B._vulgatus = abs(rnorm(1, mean=7.05977880340042e-05, sd=1.11010512795015e-05)),                
+              B._uniformis = abs(rnorm(1, mean=0.000506359055412197, sd=4.81672082905059e-05)),                 
+              B._fragilis_spp = abs(rnorm(1, mean=0.000214257008864236, sd=2.44294448507434e-05)),             
+              B._thetaiotaomicron = abs(rnorm(1, mean=0.00014096331819092, sd=1.78736047542094e-05)),           
+              B._hansenii = abs(rnorm(1, mean=0.000125958108096701, sd=0.000130217849826307)),                  
+              C._ramosum = abs(rnorm(1, mean=0.000430441856727827, sd=5.2888745827499e-05)),                   
+              L._gasseri = abs(rnorm(1, mean=1.80176117155886e-05, sd=4.19163879520381e-06)),                  
+              E._rectale = abs(rnorm(1, mean=0.000725407528058181, sd=7.82070742470247e-05)),                   
+              B._crossotus = abs(rnorm(1, mean=0.000948587080970102, sd=6.62190857501865e-05)),                 
+              H._parainfluenzae = abs(rnorm(1, mean=0.001079575223175, sd=0.000154388807599343)),               
+              P._copri = abs(rnorm(1, mean=0.000731196596233283, sd=4.82698966819151e-05)),                     
+              P._melaninogenica = abs(rnorm(1, mean=0.000336104300820938, sd=2.31714975222854e-05)),            
+              B._adolescentis = abs(rnorm(1, mean=5.48321528841458e-05, sd=1.83019588012512e-05)),              
+              E._lenta = abs(rnorm(1, mean=2.59882966130796e-05, sd=2.49440646242802e-05)),                     
+              F._nucleatum_subsp._nucleatum = abs(rnorm(1, mean=0.000566579693046046, sd=9.97384090735171e-05)),
+              C._bolteae = abs(rnorm(1, mean=0.000907496861224009, sd=8.89073832978572e-05)),                  
+              B._longum_subsp._longum = abs(rnorm(1, mean=4.03845603290901e-05, sd=9.50627585880049e-06)),      
+              F._nucleatum_subsp._animalis = abs(rnorm(1, mean=0.000676545552306157, sd=8.68953948156133e-05)), 
+              C._perfringens_S107 = abs(rnorm(1, mean=3.61386007851666e-05, sd=9.2382951873408e-06)),          
+              D._piger = abs(rnorm(1, mean=0, sd=0)),                                                         
+              C._saccharolyticum = abs(rnorm(1, mean=0.00011764005776209, sd=2.29097996081116e-06)),            
+              S._salivarius = abs(rnorm(1, mean=0.000322345548328651, sd=1.65398466669143e-05)),                
+              A._odontolyticus = abs(rnorm(1, mean=4.45698028284328e-05, sd=4.4764649321908e-05)),             
+              E._siraeum = abs(rnorm(1, mean=0.000274765209770734, sd=3.14451027854843e-05)),                   
+              L._paracasei = abs(rnorm(1, mean=1.96367206676485e-05, sd=3.4011797890405e-05)),                
+              B._animalis_subsp._lactis_spp = abs(rnorm(1, mean=5.57014984987015e-05, sd=5.4737716097266e-05)),
+              R._gnavus = abs(rnorm(1, mean=0.000117647080709773, sd=0.00011518999237969)),                     
+              C._comes = abs(rnorm(1, mean=0.00026674598783214, sd=3.06719549952743e-05)),                     
+              E._coli_spp = abs(rnorm(1, mean=0.000617763645369192, sd=2.9637840855789e-05)),                  
+              C._difficile = abs(rnorm(1, mean=3.9717288475336e-05, sd=6.60785304796277e-06)),                 
+              L._lactis = abs(rnorm(1, mean=6.70578893414527e-05, sd=2.23581088770541e-05)),                    
+              L._plantarum = abs(rnorm(1, mean=1.38236107271217e-06, sd=2.39431961234289e-06)),                
+              S._typhimurium_spp = abs(rnorm(1, mean=0.000194198072913868, sd=2.84617002762361e-05)),           
+              V._cholerae_spp = abs(rnorm(1, mean=0.000225397642942603, sd=3.97680979826455e-05)))
+
+
+##Serial dilution regime details
+dil_factor <- 0.02
+num_dilutions <- 9
+
+
+final.out.df <- data.frame(matrix(nrow = 0, ncol = 35))
+
+colnames(final.out.df) <- c("time", 
+                            "A._odontolyticus",
+                            "B._adolescentis", 
+                            "B._crossotus", 
+                            "B._hansenii", 
+                            "B._longum_subsp._longum", 
+                            "B._thetaiotaomicron", 
+                            "B._uniformis", 
+                            "B._vulgatus", 
+                            "C._bolteae", 
+                            "C._comes", 
+                            "C._perfringens_S107", 
+                            "C._ramosum", 
+                            "C._saccharolyticum", 
+                            "D._piger", 
+                            "E._lenta", 
+                            "E._rectale", 
+                            "E._siraeum", 
+                            "F._nucleatum_subsp._animalis", 
+                            "F._nucleatum_subsp._nucleatum", 
+                            "H._parainfluenzae", 
+                            "L._gasseri", 
+                            "L._lactis", 
+                            "L._paracasei", 
+                            "L._plantarum", 
+                            "P._copri", 
+                            "C._difficile", 
+                            "P._melaninogenica", 
+                            "R._gnavus", 
+                            "S._salivarius", 
+                            "E._coli_spp", 
+                            "B._animalis_subsp._lactis_spp", 
+                            "S._typhimurium_spp", 
+                            "V._cholerae_spp", 
+                            "B._fragilis_spp")
+
+
+
+# Creating empty dataframes to collect data in loops and write out at the end
+collecting_dilution_end_vals_df <- data.frame(simulationID = numeric(),
+                                              time = numeric(),
+                                              B_vulg = numeric(),
+                                              B_unif = numeric(),
+                                              B_frag = numeric(),
+                                              B_thet = numeric(),
+                                              C_ram = numeric(),
+                                              L_gass = numeric(),
+                                              E_rect = numeric(),
+                                              B_cross = numeric(),
+                                              H_para = numeric(),
+                                              P_copri = numeric(),
+                                              P_melan = numeric(),
+                                              B_adol = numeric(),
+                                              E_lent = numeric(),
+                                              F_nucl_nucl = numeric(),
+                                              C_bolt = numeric(),
+                                              B_long_long = numeric(),
+                                              F_nucl_anim = numeric(),
+                                              C_perf_S107 = numeric(),
+                                              C_sacch = numeric(),
+                                              S_sal = numeric(),
+                                              E_sir = numeric(),
+                                              L_para = numeric(),
+                                              B_anim_lact = numeric(),
+                                              R_gnav = numeric(),
+                                              C_com = numeric(),
+                                              E_coli_IAI1 = numeric(),
+                                              C_diff = numeric(),
+                                              S_son = numeric(),
+                                              L_lac = numeric(),
+                                              L_plant = numeric(),
+                                              S_typh_LT2 = numeric(),
+                                              V_chol = numeric())
+#Specify number of sims, j
+for (j in 1:1500){
+  xstart <- c(  B._vulgatus = abs(rnorm(1, mean=7.05977880340042e-05, sd=1.11010512795015e-05)),                
+                B._uniformis = abs(rnorm(1, mean=0.000506359055412197, sd=4.81672082905059e-05)),                 
+                B._fragilis_spp = abs(rnorm(1, mean=0.000214257008864236, sd=2.44294448507434e-05)),             
+                B._thetaiotaomicron = abs(rnorm(1, mean=0.00014096331819092, sd=1.78736047542094e-05)),           
+                B._hansenii = abs(rnorm(1, mean=0.000125958108096701, sd=0.000130217849826307)),                  
+                C._ramosum = abs(rnorm(1, mean=0.000430441856727827, sd=5.2888745827499e-05)),                   
+                L._gasseri = abs(rnorm(1, mean=1.80176117155886e-05, sd=4.19163879520381e-06)),                  
+                E._rectale = abs(rnorm(1, mean=0.000725407528058181, sd=7.82070742470247e-05)),                   
+                B._crossotus = abs(rnorm(1, mean=0.000948587080970102, sd=6.62190857501865e-05)),                 
+                H._parainfluenzae = abs(rnorm(1, mean=0.001079575223175, sd=0.000154388807599343)),               
+                P._copri = abs(rnorm(1, mean=0.000731196596233283, sd=4.82698966819151e-05)),                     
+                P._melaninogenica = abs(rnorm(1, mean=0.000336104300820938, sd=2.31714975222854e-05)),            
+                B._adolescentis = abs(rnorm(1, mean=5.48321528841458e-05, sd=1.83019588012512e-05)),              
+                E._lenta = abs(rnorm(1, mean=2.59882966130796e-05, sd=2.49440646242802e-05)),                     
+                F._nucleatum_subsp._nucleatum = abs(rnorm(1, mean=0.000566579693046046, sd=9.97384090735171e-05)),
+                C._bolteae = abs(rnorm(1, mean=0.000907496861224009, sd=8.89073832978572e-05)),                  
+                B._longum_subsp._longum = abs(rnorm(1, mean=4.03845603290901e-05, sd=9.50627585880049e-06)),      
+                F._nucleatum_subsp._animalis = abs(rnorm(1, mean=0.000676545552306157, sd=8.68953948156133e-05)), 
+                C._perfringens_S107 = abs(rnorm(1, mean=3.61386007851666e-05, sd=9.2382951873408e-06)),          
+                D._piger = abs(rnorm(1, mean=0, sd=0)),                                                         
+                C._saccharolyticum = abs(rnorm(1, mean=0.00011764005776209, sd=2.29097996081116e-06)),            
+                S._salivarius = abs(rnorm(1, mean=0.000322345548328651, sd=1.65398466669143e-05)),                
+                A._odontolyticus = abs(rnorm(1, mean=4.45698028284328e-05, sd=4.4764649321908e-05)),             
+                E._siraeum = abs(rnorm(1, mean=0.000274765209770734, sd=3.14451027854843e-05)),                   
+                L._paracasei = abs(rnorm(1, mean=1.96367206676485e-05, sd=3.4011797890405e-05)),                
+                B._animalis_subsp._lactis_spp = abs(rnorm(1, mean=5.57014984987015e-05, sd=5.4737716097266e-05)),
+                R._gnavus = abs(rnorm(1, mean=0.000117647080709773, sd=0.00011518999237969)),                     
+                C._comes = abs(rnorm(1, mean=0.00026674598783214, sd=3.06719549952743e-05)),                     
+                E._coli_spp = abs(rnorm(1, mean=0.000617763645369192, sd=2.9637840855789e-05)),                  
+                C._difficile = abs(rnorm(1, mean=3.9717288475336e-05, sd=6.60785304796277e-06)),                 
+                L._lactis = abs(rnorm(1, mean=6.70578893414527e-05, sd=2.23581088770541e-05)),                    
+                L._plantarum = abs(rnorm(1, mean=1.38236107271217e-06, sd=2.39431961234289e-06)),                
+                S._typhimurium_spp = abs(rnorm(1, mean=0.000194198072913868, sd=2.84617002762361e-05)),           
+                V._cholerae_spp = abs(rnorm(1, mean=0.000225397642942603, sd=3.97680979826455e-05)))
+  
+  
+  ##Adjust for selected medium for which code is run
+  ##From list as can be found in: unique(monocultures_growth_final$Medium)
+  selected_medium <- "8"  
+  
+  # Filter the dataframe for the specified medium
+  filtered_df <- monocultures_growth_final[monocultures_growth_final$Medium == selected_medium, ]
+  
+  # Extract the sum of MaxODs (c),  where c = sum of maxODs observed in monoculture for medium in question
+  c_mean <- sum(filtered_df$MaxOD, na.rm = TRUE)
+  c_sd <- sum(filtered_df$MaxOD_sd, na.rm = TRUE)
+  c <- rnorm(1, mean = c_mean, sd = c_sd)
+  
+  # Extract the largest single MaxOD (m), where m = largest single maxOD observed in monoculture for medium in question
+  maxOD_row <- filtered_df[which.max(filtered_df$MaxOD), ]
+  m_max <- maxOD_row$MaxOD
+  m_max_sd <- maxOD_row$MaxOD_sd
+  # If standard deviation is NA, use maxOD directly; otherwise, pull from normal distribution
+  if (is.na(m_max_sd)) {
+    m <- m_max
+  } else {
+    m <- rnorm(1, mean = m_max, sd = m_max_sd)
+  }
+  
+  
+  # Co-culture correction factor (z)
+  z <- m / c
+  
+  
+  # Preparing an empty list to store the parameters
+  parms <- list()
+  
+  # Loop over each row in filtered_df to extract Rate, Rate_sd, MaxOD, and MaxOD_sd for each species
+  for(i in 1:nrow(filtered_df)) {
+    species_row <- filtered_df[i, ]
+    species_name <- species_row$Species  # Keep the species name format as is
+    
+    # Extracting Rate and Rate_sd
+    rate_mean <- species_row$Rate
+    rate_sd <- species_row$Rate_sd
+    rate_sd <- ifelse(is.na(rate_sd), 0, rate_sd)  # Handle NA
+    
+    # Extracting MaxOD and MaxOD_sd
+    maxOD_mean <- species_row$MaxOD
+    maxOD_sd <- species_row$MaxOD_sd
+    maxOD_sd <- ifelse(is.na(maxOD_sd), 0, maxOD_sd)  # Handle NA
+    
+    # Adding rate parameters
+    parms_name_rate <- paste("r", species_name, sep = "_")
+    parms[[parms_name_rate]] <- abs(rnorm(1, mean = rate_mean, sd = rate_sd))
+    
+    # Adding maxOD parameters (with co-culture correction)
+    parms_name_maxOD <- paste("K", species_name, sep = "_")
+    parms[[parms_name_maxOD]] <- abs(rnorm(1, mean = maxOD_mean * z, sd = maxOD_sd * z))
+  }
+  
+  # Check the resulting parms list
+  print(parms)
+  
+  
+  # library(tidyverse)
+  final.out.df <- data.frame(matrix(nrow = 0, ncol = 35))
+  colnames(final.out.df) <- c("time", 
+                              "A._odontolyticus",
+                              "B._adolescentis", 
+                              "B._crossotus", 
+                              "B._hansenii", 
+                              "B._longum_subsp._longum", 
+                              "B._thetaiotaomicron", 
+                              "B._uniformis", 
+                              "B._vulgatus", 
+                              "C._bolteae", 
+                              "C._comes", 
+                              "C._perfringens_S107", 
+                              "C._ramosum", 
+                              "C._saccharolyticum", 
+                              "D._piger", 
+                              "E._lenta", 
+                              "E._rectale", 
+                              "E._siraeum", 
+                              "F._nucleatum_subsp._animalis", 
+                              "F._nucleatum_subsp._nucleatum", 
+                              "H._parainfluenzae", 
+                              "L._gasseri", 
+                              "L._lactis", 
+                              "L._paracasei", 
+                              "L._plantarum", 
+                              "P._copri", 
+                              "C._difficile", 
+                              "P._melaninogenica", 
+                              "R._gnavus", 
+                              "S._salivarius", 
+                              "E._coli_spp", 
+                              "B._animalis_subsp._lactis_spp", 
+                              "S._typhimurium_spp", 
+                              "V._cholerae_spp", 
+                              "B._fragilis_spp")
+  for (i in 1:num_dilutions){
+    
+    out <- ode(
+      func=closed.sir.model,
+      y=xstart,
+      times=times,
+      parms=parms
+    )
+    out.df <- as.data.frame(out)
+    if(is.na(out.df$time[length(rownames(out.df))])){
+      break
+    }  
+    if(out.df$time[length(rownames(out.df))] != 48){
+      break
+    }
+    out.df$time <- out.df$time + (i-1)*48
+    
+    collecting_dilution_end_vals_df <- rbind(collecting_dilution_end_vals_df, cbind(simulationID = j, out.df[length(rownames(out.df)),]))
+    
+    xstart <- c(A._odontolyticus = as.numeric(out.df[length(rownames(out.df)), which(colnames(out.df) == "A._odontolyticus")] * dil_factor),
+      B._adolescentis = as.numeric(out.df[length(rownames(out.df)), which(colnames(out.df) == "B._adolescentis")] * dil_factor),
+      B._crossotus = as.numeric(out.df[length(rownames(out.df)), which(colnames(out.df) == "B._crossotus")] * dil_factor),
+      B._hansenii = as.numeric(out.df[length(rownames(out.df)), which(colnames(out.df) == "B._hansenii")] * dil_factor),
+      B._longum_subsp._longum = as.numeric(out.df[length(rownames(out.df)), which(colnames(out.df) == "B._longum_subsp._longum")] * dil_factor),
+      B._thetaiotaomicron = as.numeric(out.df[length(rownames(out.df)), which(colnames(out.df) == "B._thetaiotaomicron")] * dil_factor),
+      B._uniformis = as.numeric(out.df[length(rownames(out.df)), which(colnames(out.df) == "B._uniformis")] * dil_factor),
+      B._vulgatus = as.numeric(out.df[length(rownames(out.df)), which(colnames(out.df) == "B._vulgatus")] * dil_factor),
+      C._bolteae = as.numeric(out.df[length(rownames(out.df)), which(colnames(out.df) == "C._bolteae")] * dil_factor),
+      C._comes = as.numeric(out.df[length(rownames(out.df)), which(colnames(out.df) == "C._comes")] * dil_factor),
+      C._perfringens_S107 = as.numeric(out.df[length(rownames(out.df)), which(colnames(out.df) == "C._perfringens_S107")] * dil_factor),
+      C._ramosum = as.numeric(out.df[length(rownames(out.df)), which(colnames(out.df) == "C._ramosum")] * dil_factor),
+      C._saccharolyticum = as.numeric(out.df[length(rownames(out.df)), which(colnames(out.df) == "C._saccharolyticum")] * dil_factor),
+      D._piger = as.numeric(out.df[length(rownames(out.df)), which(colnames(out.df) == "D._piger")] * dil_factor),
+      E._lenta = as.numeric(out.df[length(rownames(out.df)), which(colnames(out.df) == "E._lenta")] * dil_factor),
+      E._rectale = as.numeric(out.df[length(rownames(out.df)), which(colnames(out.df) == "E._rectale")] * dil_factor),
+      E._siraeum = as.numeric(out.df[length(rownames(out.df)), which(colnames(out.df) == "E._siraeum")] * dil_factor),
+      F._nucleatum_subsp._animalis = as.numeric(out.df[length(rownames(out.df)), which(colnames(out.df) == "F._nucleatum_subsp._animalis")] * dil_factor),
+      F._nucleatum_subsp._nucleatum = as.numeric(out.df[length(rownames(out.df)), which(colnames(out.df) == "F._nucleatum_subsp._nucleatum")] * dil_factor),
+      H._parainfluenzae = as.numeric(out.df[length(rownames(out.df)), which(colnames(out.df) == "H._parainfluenzae")] * dil_factor),
+      L._gasseri = as.numeric(out.df[length(rownames(out.df)), which(colnames(out.df) == "L._gasseri")] * dil_factor),
+      L._lactis = as.numeric(out.df[length(rownames(out.df)), which(colnames(out.df) == "L._lactis")] * dil_factor),
+      L._paracasei = as.numeric(out.df[length(rownames(out.df)), which(colnames(out.df) == "L._paracasei")] * dil_factor),
+      L._plantarum = as.numeric(out.df[length(rownames(out.df)), which(colnames(out.df) == "L._plantarum")] * dil_factor),
+      P._copri = as.numeric(out.df[length(rownames(out.df)), which(colnames(out.df) == "P._copri")] * dil_factor),
+      C._difficile = as.numeric(out.df[length(rownames(out.df)), which(colnames(out.df) == "C._difficile")] * dil_factor),
+      P._melaninogenica = as.numeric(out.df[length(rownames(out.df)), which(colnames(out.df) == "P._melaninogenica")] * dil_factor),
+      R._gnavus = as.numeric(out.df[length(rownames(out.df)), which(colnames(out.df) == "R._gnavus")] * dil_factor),
+      S._salivarius = as.numeric(out.df[length(rownames(out.df)), which(colnames(out.df) == "S._salivarius")] * dil_factor),
+      E._coli_spp = as.numeric(out.df[length(rownames(out.df)), which(colnames(out.df) == "E._coli_spp")] * dil_factor),
+      B._animalis_subsp._lactis_spp = as.numeric(out.df[length(rownames(out.df)), which(colnames(out.df) == "B._animalis_subsp._lactis_spp")] * dil_factor),
+      S._typhimurium_spp = as.numeric(out.df[length(rownames(out.df)), which(colnames(out.df) == "S._typhimurium_spp")] * dil_factor),
+      V._cholerae_spp = as.numeric(out.df[length(rownames(out.df)), which(colnames(out.df) == "V._cholerae_spp")] * dil_factor),
+      B._fragilis_spp = as.numeric(out.df[length(rownames(out.df)), which(colnames(out.df) == "B._fragilis_spp")] * dil_factor)
+      )
+    
+    
+    
+  }
+  
+}
+
+
+##Investigate output file:
+View(collecting_dilution_end_vals_df)
+#Check if all simulations worked out, or had to stop along simulated 'time'
+table_output<-table(collecting_dilution_end_vals_df$time)
+View(table_output)
+
+#Against 'real' co-culture data, transposed in main script.
+TrA1_relative_abundance_table_T_mix1 <- subset(TrA1_relative_abundance_table_T, Mix == 1 & pH == 7 & !is.na(Medium))
+
+#Convert the OD units to relative abundance in output data
+collecting_dilution_end_vals_df_rel_ab <- collecting_dilution_end_vals_df %>%
+  rowwise() %>%
+  dplyr::mutate(across(-c(simulationID, time), ~ .x / sum(c_across(-c(simulationID, time))))) %>%
+  ungroup()
+
+#Keep endpoints only:
+collecting_dilution_end_vals_df_rel_ab_end <- subset(collecting_dilution_end_vals_df_rel_ab, time == 432)  
+
+
+
+# Filter the TrA1_relative_abundance_table_T_mix1 for the selected medium
+selected_abundance_table <- TrA1_relative_abundance_table_T_mix1 %>%
+  filter(Medium == selected_medium)
+
+# Create a function to count consistent survivors
+count_survivors <- function(row, reference_df) {
+  # Count the number of species with > 0.5% relative abundance
+  # that also consistently have a value > 0.005 in the reference table
+  survivors <- sapply(names(row), function(x) {
+    value <- row[[x]]
+    if (!is.na(value) && value > 0.005) {
+      all(reference_df[[x]] > 0.005, na.rm = TRUE)
+    } else {
+      FALSE
+    }
+  })
+  # Sum up the TRUE values to get the count of survivors
+  sum(survivors)
+}
+
+# Apply the function row-wise to the relative abundance dataframe
+collecting_dilution_end_vals_df_rel_ab_end$Count_survivors <- apply(
+  collecting_dilution_end_vals_df_rel_ab_end[, -c(1, 2)], 1, 
+  function(x) count_survivors(x, selected_abundance_table)
+)
+
+# Calculate the number of actual survivors in co-culture for the selected medium
+actual_survivors <- colSums(selected_abundance_table[, 2:35] > 0.005, na.rm = TRUE)
+
+actual_survivors <- sum(actual_survivors %in% c(2, 3))
+
+# Calculate the fraction of survivors correctly predicted
+collecting_dilution_end_vals_df_rel_ab_end$Fraction_survivors_correctly_predicted <- collecting_dilution_end_vals_df_rel_ab_end$Count_survivors / actual_survivors
+
+
+##Now, save as csv locally 
+# Define the file path and name using the selected_medium value
+file_path <- paste0("~/Documents/model_output_", selected_medium, ".csv")
+
+# Use the write.csv function to save the dataframe
+write.csv(collecting_dilution_end_vals_df_rel_ab_end, file = file_path, row.names = FALSE)
+
+# Print the file path for confirmation
+print(paste("File saved as:", file_path))
+
+
+
+
+##############################################################################################
+
+#If interested in plotting a single sim:
+
+species_names <- c(
+  "A._odontolyticus", "B._adolescentis", "B._crossotus", "B._hansenii",
+  "B._longum_subsp._longum", "B._thetaiotaomicron", "B._uniformis", "B._vulgatus",
+  "C._bolteae", "C._comes", "C._perfringens_S107", "C._ramosum",
+  "C._saccharolyticum", "D._piger", "E._lenta", "E._rectale",
+  "E._siraeum", "F._nucleatum_subsp._animalis", "F._nucleatum_subsp._nucleatum",
+  "H._parainfluenzae", "L._gasseri", "L._lactis", "L._paracasei",
+  "L._plantarum", "P._copri", "C._difficile", "P._melaninogenica",
+  "R._gnavus", "S._salivarius", "E._coli_spp", "B._animalis_subsp._lactis_spp",
+  "S._typhimurium_spp", "V._cholerae_spp", "B._fragilis_spp"
+)
+
+# Define the times for each simulation step
+times <- seq(from = 0, to = 48, by = 0.05)
+# Initialize a dataframe to store the results
+results_df <- data.frame(time = numeric())
+# Define the number of dilutions and dilution factor
+num_dilutions <- 9
+dil_factor <- 0.02
+
+# Initialize xstart with the correct names
+xstart <- setNames(as.numeric(xstart), species_names)
+
+# Run the simulation across the dilutions
+for (i in 1:num_dilutions) {
+  # Simulate
+  out <- ode(y = xstart, times = times, func = closed.sir.model, parms = parms)
+  out_df <- as.data.frame(out)
+  names(out_df)[-1] <- species_names  # Skip the first column (time)
+  
+  # Adjust the time to account for the current dilution step
+  out_df$time <- out_df$time + (i-1) * max(times)
+  
+  # Store the results
+  results_df <- rbind(results_df, out_df)
+  
+  # Apply the dilution factor to the final state to use as the initial condition for the next dilution
+  xstart <- as.numeric(out_df[nrow(out_df), -1]) * dil_factor
+  names(xstart) <- species_names
+}
+
+# Reshape the data to long format for plotting
+long_data <- results_df %>%
+  pivot_longer(cols = -time, names_to = "Species", values_to = "Abundance")
+
+# Plotting, including the selected medium in the title
+plot_title <- paste("Optical Densities of Species in Medium", selected_medium, "Over Time")
+
+colours<-c("steelblue4", "#E31A1C", "darkgreen", "#FF7F00", "black", "gold1", "skyblue2", 
+           "#FB9A99", "palegreen2", "blue1", "#FDBF6F", "gray40", "#6C0BA9", "maroon", "orchid1", 
+           "deeppink1", "blue3", "coral1", "lightpink", "mediumpurple", "royalblue", "cyan",
+           "slategray3","green", "yellow", "mediumseagreen", "turquoise", "goldenrod", "yellowgreen",
+           "magenta", "orange4", "cadetblue", "darkkhaki","darkmagenta",
+           "darkred")
+           
+g <- ggplot(long_data, aes(x = time, y = Abundance, group = Species, color = Species)) +
+  geom_line() +
+  scale_colour_manual(values = colours) +
+  theme_minimal() +
+  labs(title = plot_title,
+       x = "Time (hours)",
+       y = "Abundance") +
+  theme(legend.position = "right")
+print(g)
+
+##add annotations
+last_points <- long_data %>%
+  dplyr::group_by(Species) %>%
+  dplyr::summarize(yend = last(Abundance[time == 432]), .groups = 'drop')
+#add offset for annotations at the end of the line
+last_points$xend <- 432 + 2
+
+g1 <- ggplot(long_data, aes(x = time, y = Abundance, group = Species, color = Species)) +
+  geom_line() +
+  geom_text(data = last_points, aes(x = xend, y = yend, label = Species), hjust = 0, size = 3) +
+  scale_colour_manual(values = colours) +
+  theme_minimal() +
+  labs(title = plot_title, x = "Time (hours)", y = "OD") +
+  theme(legend.position = "right") +
+  coord_cartesian(xlim = c(0, 470), ylim = c(NA, NA)) # Adjust xlim to show labels without cutting off data
+
+print(g1)
