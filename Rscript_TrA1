@@ -4,6 +4,7 @@
 # List of required packages
 required_packages <- c(
   "ggplot2",
+  "ggbiplot",
   "readr",
   "RcmdrMisc",
   "Hmisc",
@@ -24,7 +25,9 @@ required_packages <- c(
   "EnhancedVolcano",
   "data.table",
   "purrr",
-  "gridExtra"
+  "gridExtra",
+  "patchwork",
+  "multcomp"
 )
 
 # Install and load required packages
@@ -37,7 +40,7 @@ for (package in required_packages) {
 
 
 
-## Radial stacked plot on normalised medium composition, in order of total sum across component classes
+##Radial stacked plot on normalised medium composition, in order of total sum across component classes
 ## Plotted by Medium and coloured by Medium component classes
 
 ## Load in required dataframe: Compounds_Tramontano.csv, adopted from Tramontano et al. 2018
@@ -54,20 +57,20 @@ convert_units <- function(x) {
     return(NA_real_)
   }
   
-  # Define regex patterns for numeric values and units
+  #Define regex patterns for numeric values and units
   numeric_pattern <- "[0-9.]+"
   unit_pattern <- "ug|µg|mg|g|mL"
   
-  # Extract the numeric part and the unit part
+  #Extract the numeric part and the unit part
   numeric_part <- as.numeric(str_extract(x, numeric_pattern))
   unit_part <- str_extract(x, unit_pattern)
   
-  # If the numeric part extraction fails, return NA
+  #If the numeric part extraction fails, return NA
   if (is.na(numeric_part)) {
     return(NA_real_)
   }
   
-  # Perform conversion based on the unit part
+  #Perform conversion based on the unit part
   if (!is.na(unit_part)) {
     switch(unit_part,
            "g" = numeric_part * 1000,
@@ -134,8 +137,6 @@ Normalised_medium_components_summed_per_class1 <- Normalised_medium_components_s
   dplyr::mutate(Class = ifelse(Class == "Nucleotids", "Nucleotides", Class))
 
 color_scheme <- c("dodgerblue3", "#EF7A6C",  "lightskyblue","darkolivegreen1", "#C8A2C8", "ivory2", "darkturquoise", "goldenrod1")
-
-#color_scheme <- c("royalblue2","#EF7A6C","ivory2", "darkolivegreen2","#C8A2C8",  "forestgreen", "darkturquoise", "goldenrod1")
 
 #Pivot to longer format
 Normalised_medium_components_summed_per_class_long <- Normalised_medium_components_summed_per_class1 %>%
@@ -271,7 +272,7 @@ TrA1_relative_abundance_table_T <- TrA1_relative_abundance_table_T %>%
 
 
 #Next, we create PCAs of the relative abundance data to explore which media produce similar clustering
-# First, split data by pH 
+#First, split data by pH 
 
 All_mixes_ab<-na.omit(TrA1_relative_abundance_table_T)
 #Also, take out the few samples with medium 15A
@@ -435,7 +436,7 @@ Medium_composition_complete_T <- Medium_composition_complete_t %>%
 Medium_composition_complete_T$Medium <- sub("M", "", Medium_composition_complete_T$Medium)
 
 # Compute the distance matrix using Euclidean method
-medium_distance_matrix <- as.matrix(dist(Medium_composition_complete_T[-1], method = "euclidean")) # -1 to remove the Medium column
+medium_distance_matrix <- as.matrix(dist(Medium_composition_complete_T[-1], method = "euclidean")) 
 
 # If you want the row and column names of the matrix to be the medium names:
 rownames(medium_distance_matrix) <- Medium_composition_complete_T$Medium
@@ -456,7 +457,7 @@ Medium_rel_ab_Mix2 <- Medium_rel_ab_Mix2[, c(2:35, 39)]
 Medium_rel_ab_Mix3 <- Medium_rel_ab_Mix3[, c(2:35, 39)]
 
 
-# Group by 'Medium' and calculate mean for each Species, per mix (across media)
+#Group by 'Medium' and calculate mean for each Species, per mix (across media)
 medium_means_Mix1 <- Medium_rel_ab_Mix1 %>%
   dplyr::group_by(Medium) %>%
   dplyr::summarise_all(mean)
@@ -470,12 +471,12 @@ medium_means_Mix3 <- Medium_rel_ab_Mix3 %>%
   dplyr::summarise_all(mean)
 
 
-# Compute the distance matrix using Bray-Curtis method, vegan package
+#Compute the distance matrix using Bray-Curtis method, vegan package
 medium_distance_matrix_Mix1 <- as.matrix(vegdist(medium_means_Mix1[-1], method = "bray"))
 medium_distance_matrix_Mix2 <- as.matrix(vegdist(medium_means_Mix2[-1], method = "bray"))
 medium_distance_matrix_Mix3 <- as.matrix(vegdist(medium_means_Mix3[-1], method = "bray"))
 
-# If you want the row and column names of the matrix to be the medium names:
+#row and column names of the matrix to medium names:
 rownames(medium_distance_matrix_Mix1) <- medium_means_Mix1$Medium
 colnames(medium_distance_matrix_Mix1) <- medium_means_Mix1$Medium
 
@@ -485,13 +486,13 @@ colnames(medium_distance_matrix_Mix2) <- medium_means_Mix2$Medium
 rownames(medium_distance_matrix_Mix3) <- medium_means_Mix3$Medium
 colnames(medium_distance_matrix_Mix3) <- medium_means_Mix3$Medium
 
-# Now, you can view the distance matrix
-print(medium_distance_matrix_Mix1)
-print(medium_distance_matrix_Mix2)
-print(medium_distance_matrix_Mix3)
+#view the distance matrix
+#print(medium_distance_matrix_Mix1)
+#print(medium_distance_matrix_Mix2)
+#print(medium_distance_matrix_Mix3)
 
 
-##Make heatmaps
+##Make corresponding heatmaps
 
 matrix_data <- as.matrix(medium_distance_matrix)
 melted_data <- melt(matrix_data)
@@ -499,16 +500,16 @@ melted_data <- melt(matrix_data)
 desired_order <- c("15B", "13", "16", "14", "1", "2", "5", "10", 
                    "7", "4", "11", "3", "9", "8")
 
-# Convert the order to a factor with specified levels
+#Convert the order to a factor with specified levels
 factor_order <- factor(rownames(matrix_data), levels = desired_order)
 
-# Order the matrix rows/columns by this factor
+#Order the matrix rows/columns by this factor
 ordered_matrix <- matrix_data[order(factor_order), order(factor_order)]
 
-# Melt the reordered matrix
+#Melt the reordered matrix
 melted_data <- melt(ordered_matrix)
 
-# Plot using ggplot
+#Plot using ggplot
 ggplot(melted_data, aes(x=Var1, y=Var2)) +
   geom_tile(aes(fill=value), color="white") +
   scale_fill_viridis_c() +  
@@ -528,16 +529,16 @@ melted_data <- melt(matrix_data)
 desired_order <- c("15B", "13", "16", "14", "1", "2", "5", "10", 
                    "7", "4", "11", "3", "9", "8")
 
-# Convert the order to a factor with specified levels
+#Convert the order to a factor with specified levels
 factor_order <- factor(rownames(matrix_data), levels = desired_order)
 
-# Order the matrix rows/columns by this factor
+#Order the matrix rows/columns by this factor
 ordered_matrix <- matrix_data[order(factor_order), order(factor_order)]
 
-# Melt the reordered matrix
+#Melt the reordered matrix
 melted_data <- melt(ordered_matrix)
 
-# Plot using ggplot
+#Plot using ggplot
 ggplot(melted_data, aes(x=Var1, y=Var2)) +
   geom_tile(aes(fill=value), color="white") +
   scale_fill_viridis_c() +  
@@ -605,30 +606,30 @@ ggplot(melted_data, aes(x=Var1, y=Var2)) +
 
 
 
-# Plot it all in one plot
-normalize_matrix <- function(mat) {
+#plot it all in one plot
+normalise_matrix <- function(mat) {
   mat / max(mat)
 }
 
-medium_chemical_distance_matrix_normalized <- normalize_matrix(medium_distance_matrix)
-medium_distance_matrix_Mix1_normalized <- normalize_matrix(medium_distance_matrix_Mix1)
-medium_distance_matrix_Mix2_normalized <- normalize_matrix(medium_distance_matrix_Mix2)
-medium_distance_matrix_Mix3_normalized <- normalize_matrix(medium_distance_matrix_Mix3)
+medium_chemical_distance_matrix_normalised <- normalise_matrix(medium_distance_matrix)
+medium_distance_matrix_Mix1_normalised <- normalise_matrix(medium_distance_matrix_Mix1)
+medium_distance_matrix_Mix2_normalised <- normalise_matrix(medium_distance_matrix_Mix2)
+medium_distance_matrix_Mix3_normalised <- normalise_matrix(medium_distance_matrix_Mix3)
 
 #reshape into long format
-df_original <- melt(medium_chemical_distance_matrix_normalized)
+df_original <- melt(medium_chemical_distance_matrix_normalised)
 colnames(df_original) <- c("Var1", "Var2", "Original")
 
-df_mix1 <- melt(medium_distance_matrix_Mix1_normalized)
+df_mix1 <- melt(medium_distance_matrix_Mix1_normalised)
 df_mix1$Inoculation <- "Mix1"
 
-df_mix2 <- melt(medium_distance_matrix_Mix2_normalized)
+df_mix2 <- melt(medium_distance_matrix_Mix2_normalised)
 df_mix2$Inoculation <- "Mix2"
 
-df_mix3 <- melt(medium_distance_matrix_Mix3_normalized)
+df_mix3 <- melt(medium_distance_matrix_Mix3_normalised)
 df_mix3$Inoculation <- "Mix3"
 
-# Add the normalised medium composition distances to each of the melted mix dataframes
+#Add the normalised medium composition distances to each of the melted mix dataframes
 df_mix1a <- merge(df_mix1, df_original[, c("Var1", "Var2", "Original")], by = c("Var1", "Var2"))
 df_mix2a <- merge(df_mix2, df_original[, c("Var1", "Var2", "Original")], by = c("Var1", "Var2"))
 df_mix3a <- merge(df_mix3, df_original[, c("Var1", "Var2", "Original")], by = c("Var1", "Var2"))
@@ -640,18 +641,18 @@ df_combined <- rbind(df_mix1a, df_mix2a, df_mix3a)
 #We will use a Mantel test
 #library(vegan)
 #order first so both are ordered by media in the same way 
-medium_distance_matrix_Mix1_normalized_ordered <- medium_distance_matrix_Mix1_normalized[match(rownames(medium_chemical_distance_matrix_normalized), rownames(medium_distance_matrix_Mix1_normalized)), match(colnames(medium_chemical_distance_matrix_normalized), colnames(medium_distance_matrix_Mix1_normalized))]
-mantel_result_Mix1 <- mantel(medium_chemical_distance_matrix_normalized, medium_distance_matrix_Mix1_normalized_ordered, method = "spearman", permutations = 9999)
+medium_distance_matrix_Mix1_normalised_ordered <- medium_distance_matrix_Mix1_normalised[match(rownames(medium_chemical_distance_matrix_normalised), rownames(medium_distance_matrix_Mix1_normalised)), match(colnames(medium_chemical_distance_matrix_normalised), colnames(medium_distance_matrix_Mix1_normalised))]
+mantel_result_Mix1 <- mantel(medium_chemical_distance_matrix_normalised, medium_distance_matrix_Mix1_normalised_ordered, method = "spearman", permutations = 9999)
 print(mantel_result_Mix1)
 Mix1_rho <- 0.57
 
-medium_distance_matrix_Mix2_normalized_ordered <- medium_distance_matrix_Mix2_normalized[match(rownames(medium_chemical_distance_matrix_normalized), rownames(medium_distance_matrix_Mix2_normalized)), match(colnames(medium_chemical_distance_matrix_normalized), colnames(medium_distance_matrix_Mix2_normalized))]
-mantel_result_Mix2 <- mantel(medium_chemical_distance_matrix_normalized, medium_distance_matrix_Mix2_normalized_ordered, method = "spearman", permutations = 9999)
+medium_distance_matrix_Mix2_normalised_ordered <- medium_distance_matrix_Mix2_normalised[match(rownames(medium_chemical_distance_matrix_normalised), rownames(medium_distance_matrix_Mix2_normalised)), match(colnames(medium_chemical_distance_matrix_normalised), colnames(medium_distance_matrix_Mix2_normalised))]
+mantel_result_Mix2 <- mantel(medium_chemical_distance_matrix_normalised, medium_distance_matrix_Mix2_normalised_ordered, method = "spearman", permutations = 9999)
 print(mantel_result_Mix2)
 Mix2_rho <- 0.30
 
-medium_distance_matrix_Mix3_normalized_ordered <- medium_distance_matrix_Mix3_normalized[match(rownames(medium_chemical_distance_matrix_normalized), rownames(medium_distance_matrix_Mix3_normalized)), match(colnames(medium_chemical_distance_matrix_normalized), colnames(medium_distance_matrix_Mix3_normalized))]
-mantel_result_Mix3 <- mantel(medium_chemical_distance_matrix_normalized, medium_distance_matrix_Mix3_normalized_ordered, method = "spearman", permutations = 9999)
+medium_distance_matrix_Mix3_normalised_ordered <- medium_distance_matrix_Mix3_normalised[match(rownames(medium_chemical_distance_matrix_normalised), rownames(medium_distance_matrix_Mix3_normalised)), match(colnames(medium_chemical_distance_matrix_normalised), colnames(medium_distance_matrix_Mix3_normalised))]
+mantel_result_Mix3 <- mantel(medium_chemical_distance_matrix_normalised, medium_distance_matrix_Mix3_normalised_ordered, method = "spearman", permutations = 9999)
 print(mantel_result_Mix3)
 Mix3_rho <- 0.50
 
@@ -701,20 +702,20 @@ cat("Mix3: R2 =", r2_Mix3, "p-value =", pval_Mix3, "\n")
 
 
 ggplot(df_combined, aes(x=Original, y=value)) +
-  # Shaded band
+  #Shaded band around diagonal
   geom_ribbon(aes(ymin = Original - band_width, ymax = Original + band_width), fill = "grey80", alpha = 0.6) +
   
-  # Points with conditional coloring
+  #points with conditional coloring
   geom_point(aes(color=ifelse(value < Original + band_width & value > Original - band_width, "Inside Band", Inoculation), shape=Inoculation), size=4, alpha=0.5, stroke = 1.2) +
   
-  # Diagonal
+  #add diagonal
   geom_abline(intercept=0, slope=1, color="grey35", linetype="dashed") +
   
-  # Define custom colors
+  #Define custom colors
   scale_color_manual(values=c("Inside Band" = "grey65", Mix1="grey30", Mix2="grey30", Mix3="grey30"), name = NA) +
   scale_shape_manual(values=c(Mix1=0, Mix2=1, Mix3=2)) +
   
-  # Annotate with R^2 values
+  #Annotate with R^2 values
   annotate("text", x = 0.03, y = 1.29, size = 4, hjust=0, vjust=1,
            label = sprintf("'Mix 1: R'^2~'='~%.2f", round(r2_Mix1, 2)), 
            hjust=0, vjust=1, parse = TRUE) +
@@ -758,17 +759,17 @@ Medium_composition_complete_T
 Medium_composition_complete_for_PCA <- Medium_composition_complete_T[,c(2:89)]
 Composition_all_PCA<-prcomp(Medium_composition_complete_for_PCA, center = TRUE)
 
-## Extract averaged shannon alpha diversities per medium for pH 7
+##Extract averaged Shannon alpha diversities per medium for pH 7
 All_mixes_ab_pH7
 
 mean_alpha_diversities_per_medium <- All_mixes_ab_pH7 %>%
   dplyr::group_by(Medium) %>%
   dplyr::summarise(Mean_Alpha_div = mean(Alpha_diversity, na.rm = TRUE))
 
-## Merge with the Medium_composition_complete_T dataframe
+##Merge with the Medium_composition_complete_T dataframe
 Medium_composition_complete_T <- left_join(Medium_composition_complete_T, mean_alpha_diversities_per_medium, by = "Medium")
 
-# Generate the PCA plot
+#Generate the PCA plot
 var_explained <- Composition_all_PCA$sdev^2 / sum(Composition_all_PCA$sdev^2)
 aspect_ratio <- var_explained[2] / var_explained[1]
 g <- ggbiplot(Composition_all_PCA, var.axes = FALSE, choice=c(1,2)) +
@@ -803,10 +804,10 @@ g1 + scale_shape_manual(values=c(0, 1, 16, 5, 13, 8, 10, 15, 17, 2, 9,1,12,14)) 
 g1 <- g + geom_point(aes(colour=as.factor(Medium_composition_complete_T$Medium), 
                          size = Medium_composition_complete_T$Mean_Alpha_div), stroke = 1.2, alpha = 0.5)
 
-# Use scale_size_continuous to set the range of sizes:
+#Use scale_size_continuous to set the range of sizes:
 g1 <- g1 + scale_size_continuous(range = c(3, 10)) 
 
-# Then add the rest of the layers
+#Then add the rest of the layers
 g1 + scale_color_manual(values=c("black", "#00AFBB", "#2e37fe", "darkorchid1", "green", "#0072B2", "indianred","gold1", "firebrick4", "springgreen3",  "chocolate1","#6C0BA9", "red", "#999999", "magenta"), name="Medium") +
   labs(shape = "Media", color = "Mean Alpha Diversity 
   across mixes") +
@@ -850,7 +851,7 @@ monocultures_growth_1<-subset(monocultures_growth, Species !="A. shahii" & Speci
                                 Species !="V. parvula" & Species !="Y. pseudotuberculosis" &
                                 Media != "WCA" & Media != "15 A" & Media != "BHI++" & Media != "GMM" & Media != "mGAM")
 
-## We perfrom averaging species groups in accordance with species grouping for 16S taxonomy after line 894 
+## We perfrom averaging species groups in accordance with species grouping for 16S taxonomy after line 891 
 ## Here, we proceed with the species used in the Core experiment as detailed above
 
 
@@ -890,7 +891,7 @@ Scatterplots1_df_B <- left_join(Scatterplots1_df_A, Normalised_medium_components
 
 
 ### Relative success analysis TrA1
-###To make relative maxODs for each taxa, we need to average monoculture growth information for each taxa (grouped together species/strains)
+###To make relative maxODs for each taxa, we need to average monoculture growth information for each taxa (grouped together species/strains based on 16S)
 ##Grouped together: 
 
 # Make sure Media is a factor with the correct levels
@@ -1157,7 +1158,7 @@ monoculture_survivor_richness1 <- monocultures_growth_final %>%
 Scatterplots1_df_B <- left_join(monoculture_survivor_richness1, Scatterplots1_df_B, by = "Medium")
 
 
-### Create scatters
+###Create scatters
 correlation1 <- cor.test(Scatterplots1_df_B$Monoculture_survivor_richness1, Scatterplots1_df_B$Mean_Alpha_div, method = "spearman")
 correlation1a <- cor.test(Scatterplots1_df_B$Monoculture_survivor_richness1, Scatterplots1_df_B$Mean_Alpha_div, method = "pearson")
 
@@ -1260,23 +1261,23 @@ Media_mix2 <- c("1", "2", "3", "4", "5", "7", "8", "9", "10", "11", "13", "14", 
 Media_mix3 <- c("1", "2", "3", "4", "5", "7", "8", "9", "10", "11", "13", "14", "15B", "16")
 
 
-# Calculate the sum of "MaxOD" per "Medium" category
+##Calculate the sum of "MaxOD" per "Medium" category
 sum_per_media_Mix1 <- aggregate(MaxOD ~ Medium, data = monocultures_growth_Mix1, sum)
 sum_per_media_Mix2 <- aggregate(MaxOD ~ Medium, data = monocultures_growth_Mix2, sum)
 sum_per_media_Mix3 <- aggregate(MaxOD ~ Medium, data = monocultures_growth_Mix3, sum)
 
-# Merge the sum values back into the original dataset
+#Merge the sum values back into the original dataset
 monocultures_growth_Mix1 <- merge(monocultures_growth_Mix1, sum_per_media_Mix1, by = "Medium", suffixes = c("", "_sum"))
 monocultures_growth_Mix2 <- merge(monocultures_growth_Mix2, sum_per_media_Mix2, by = "Medium", suffixes = c("", "_sum"))
 monocultures_growth_Mix3 <- merge(monocultures_growth_Mix3, sum_per_media_Mix3, by = "Medium", suffixes = c("", "_sum"))
 #View(monocultures_growth_Mix2)
 
-# Calculate the relative maxOD by dividing "MaxOD" by the corresponding sum value
+#Calculate the relative maxOD by dividing "MaxOD" by the corresponding sum value
 monocultures_growth_Mix1$relative_maxOD <- monocultures_growth_Mix1$MaxOD / monocultures_growth_Mix1$MaxOD_sum
 monocultures_growth_Mix2$relative_maxOD <- monocultures_growth_Mix2$MaxOD / monocultures_growth_Mix2$MaxOD_sum
 monocultures_growth_Mix3$relative_maxOD <- monocultures_growth_Mix3$MaxOD / monocultures_growth_Mix3$MaxOD_sum
 
-# Remove the extra column created during the merge
+#Remove the extra column created during the merge
 monocultures_growth_Mix1 <- subset(monocultures_growth_Mix1, select = -MaxOD_sum)
 monocultures_growth_Mix2 <- subset(monocultures_growth_Mix2, select = -MaxOD_sum)
 monocultures_growth_Mix3 <- subset(monocultures_growth_Mix3, select = -MaxOD_sum)
@@ -1347,23 +1348,23 @@ Relative_ab_pH7_Mix1_T_summarised <- as.data.frame(Relative_ab_pH7_Mix1_T_summar
 Relative_ab_pH7_Mix2_T_summarised <- aggregate(Rel_ab ~ Medium + Species + Phylum + Gram, data = Relative_ab_pH7_Mix2_T,
                                                FUN = function(x) c(mean_Rel_ab = mean(x), sd_Rel_ab = sd(x, na.rm = TRUE)))
 
-# Flatten the resulting data frame
+##Flatten the resulting data frame
 Relative_ab_pH7_Mix2_T_summarised <- as.data.frame(Relative_ab_pH7_Mix2_T_summarised, stringsAsFactors = FALSE)
 
 #Summarise Mix 3
 Relative_ab_pH7_Mix3_T_summarised <- aggregate(Rel_ab ~ Medium + Species + Phylum + Gram, data = Relative_ab_pH7_Mix3_T,
                                                FUN = function(x) c(mean_Rel_ab = mean(x), sd_Rel_ab = sd(x, na.rm = TRUE)))
 
-# Flatten the resulting data frame
+#Flatten the resulting data frame
 Relative_ab_pH7_Mix3_T_summarised <- as.data.frame(Relative_ab_pH7_Mix3_T_summarised, stringsAsFactors = FALSE)
 
 
-# Convert nested variables to separate columns
+#Convert nested variables to separate columns
 Relative_ab_pH7_Mix1_T_summarised <- cbind(Relative_ab_pH7_Mix1_T_summarised, Relative_ab_pH7_Mix1_T_summarised$Rel_ab)
 Relative_ab_pH7_Mix2_T_summarised <- cbind(Relative_ab_pH7_Mix2_T_summarised, Relative_ab_pH7_Mix2_T_summarised$Rel_ab)
 Relative_ab_pH7_Mix3_T_summarised <- cbind(Relative_ab_pH7_Mix3_T_summarised, Relative_ab_pH7_Mix3_T_summarised$Rel_ab)
 
-# Remove the nested variable from the dataframe
+#Remove the nested variable from the dataframe
 Relative_ab_pH7_Mix1_T_summarised$Rel_ab <- NULL
 Relative_ab_pH7_Mix2_T_summarised$Rel_ab <- NULL
 Relative_ab_pH7_Mix3_T_summarised$Rel_ab <- NULL
@@ -1456,7 +1457,7 @@ Mix3_Mono_and_co_culture[is.na(Mix3_Mono_and_co_culture)] <-0
 #If monoc > 0, but co-cult = 0: Loser (in manuscript referred to as "emergent extinction")
 #If monoc = 0, but co-cult > 0: Winner (in manuscript referred to as "emergent survivor")
 #If monoc > 0 and co-cult > 0, if, co-cult info, with its confidence interval, lies above the monoc (and its confidence interval) info: Boosted
-#If monoc > 0 and co-cult > 0, if, co-cult info, with its confidence interval, lies below the monoc (and its confidence interval) info: Suppressed
+#If monoc > 0 and co-cult > 0, if, co-cult info, with its confidence interval, lies below the monoc (and its confidence interval) info: Suppressed (in manuscript referred to as "subdued")
 #If monoc > 0 and co-cult > 0, if, co-cult info, with its confidence interval, lies within the monoc (and its confidence interval) info: Variable/Inconclusive
 
 
@@ -1522,7 +1523,7 @@ media_order_Media_mix1 <- names(sort(-label_counts_Media_mix1[, "No growth"]))
 media_order_Media_mix2 <- names(sort(-label_counts_Media_mix2[, "No growth"]))
 media_order_Media_mix3 <- names(sort(-label_counts_Media_mix3[, "No growth"]))
 
-# Create a data frame for plotting
+#Create a data frame for plotting
 plot_data_Media_mix1 <- data.frame(
   Medium = factor(row.names(label_counts_Media_mix1), levels = media_order_Media_mix1),
   No_growth = label_counts_Media_mix1[, "No growth"],
@@ -1573,7 +1574,7 @@ plot_data_Media_mix2_1<-plot_data_Media_mix2[, c(1:7)]
 plot_data_Media_mix3_1<-plot_data_Media_mix3[, c(1:7)]
 
 
-# Reshape the data into a long format
+#Reshape the data into a long format
 plot_data_Media_mix1_long <- plot_data_Media_mix1_1 %>%
   pivot_longer(cols = -Medium, names_to = "Status", values_to = "Count")
 
@@ -1583,12 +1584,12 @@ plot_data_Media_mix2_long <- plot_data_Media_mix2_1 %>%
 plot_data_Media_mix3_long <- plot_data_Media_mix3_1 %>%
   pivot_longer(cols = -Medium, names_to = "Status", values_to = "Count")
 
-# Order the Media categories by the count of "No_growth"
+#Order the Media categories by the count of "No_growth"
 plot_data_Media_mix1_long$Medium <- factor(plot_data_Media_mix1_long$Medium, levels = media_order_Media_mix1)
 plot_data_Media_mix2_long$Medium <- factor(plot_data_Media_mix2_long$Medium, levels = media_order_Media_mix2)
 plot_data_Media_mix3_long$Medium <- factor(plot_data_Media_mix3_long$Medium, levels = media_order_Media_mix3)
 
-# Convert 'Media' from factor to character in all dataframes
+#Convert 'Media' from factor to character in all dataframes
 plot_data_Media_mix1_long$Medium <- as.character(plot_data_Media_mix1_long$Medium)
 plot_data_Media_mix2_long$Medium <- as.character(plot_data_Media_mix2_long$Medium)
 plot_data_Media_mix3_long$Medium <- as.character(plot_data_Media_mix3_long$Medium)
@@ -1632,13 +1633,13 @@ plot_data_for_Media_across_mixes <- bind_rows(plot_data_Media_mix1_long, plot_da
 
 
 ##Now, we want the same overview for Species
-# Mix 1
+#Mix 1
 label_counts_Mix1 <- table(Mix1_Mono_and_co_culture$Species, Mix1_Mono_and_co_culture$Status)
 
-# Reorder the Media categories based on the count of "No growth"
+#Reorder the Media categories based on the count of "No growth"
 Species_order_Mix1 <- names(sort(-label_counts_Mix1[, "No growth"]))
 
-# Create a data frame for plotting
+#Create a data frame for plotting
 plot_data_Mix1 <- data.frame(
   Species = factor(row.names(label_counts_Mix1), levels = Species_order_Mix1),
   No_growth = label_counts_Mix1[, "No growth"],
@@ -1649,25 +1650,25 @@ plot_data_Mix1 <- data.frame(
   Variable = label_counts_Mix1[, "Variable"]
 )
 
-# Calculate the total sum for each Species, which should be the total number of species
+#Calculate the total sum for each Species, which should be the total number of species
 plot_data_Mix1$total <- rowSums(plot_data_Mix1[, c("No_growth", "Winner", "Loser", "Boosted", "Suppressed", "Variable")])
 
-# Order the data frame by the count of "No growth". All totals should end up at 14 (total media used)
+#Order the data frame by the count of "No growth". All totals should end up at 14 (total media used)
 plot_data_Mix1 <- plot_data_Mix1[order(plot_data_Mix1$No_growth, decreasing = TRUE), ]
 
 plot_data_Mix1_1<-plot_data_Mix1[, c(1:7)]
-# Reshape the data into a long format
+#Reshape the data into a long format
 plot_data_long_Mix1 <- plot_data_Mix1_1 %>%
   pivot_longer(cols = -Species, names_to = "Status", values_to = "Count")
 
 
-# Mix 2
+#Mix 2
 label_counts_Mix2 <- table(Mix2_Mono_and_co_culture$Species, Mix2_Mono_and_co_culture$Status)
 
-# Reorder the Media categories based on the count of "No growth"
+#Reorder the Media categories based on the count of "No growth"
 Species_order_Mix2 <- names(sort(-label_counts_Mix2[, "No growth"]))
 
-# Create a data frame for plotting
+#Create a data frame for plotting
 plot_data_Mix2 <- data.frame(
   Species = factor(row.names(label_counts_Mix2), levels = Species_order_Mix2),
   No_growth = label_counts_Mix2[, "No growth"],
@@ -1678,18 +1679,18 @@ plot_data_Mix2 <- data.frame(
   Variable = label_counts_Mix2[, "Variable"]
 )
 
-# Calculate the total sum for each Species, which should be the total number of species
+#Calculate the total sum for each Species, which should be the total number of species
 plot_data_Mix2$total <- rowSums(plot_data_Mix2[, c("No_growth", "Winner", "Loser", "Boosted", "Suppressed", "Variable")])
 
-# Order the data frame by the count of "No growth"
+#Order the data frame by the count of "No growth"
 plot_data_Mix2 <- plot_data_Mix2[order(plot_data_Mix2$No_growth, decreasing = TRUE), ]
 
 plot_data_Mix2_1<-plot_data_Mix2[, c(1:7)]
-# Reshape the data into a long format
+#Reshape the data into a long format
 plot_data_long_Mix2 <- plot_data_Mix2_1 %>%
   pivot_longer(cols = -Species, names_to = "Status", values_to = "Count")
 
-# Mix 3
+#Mix 3
 label_counts_Mix3 <- table(Mix3_Mono_and_co_culture$Species, Mix3_Mono_and_co_culture$Status)
 
 #Reorder the Media categories based on the count of "No growth"
@@ -1709,30 +1710,30 @@ plot_data_Mix3 <- data.frame(
 #Calculate the total sum for each Species, which should be the total number of species
 plot_data_Mix3$total <- rowSums(plot_data_Mix3[, c("No_growth", "Winner", "Loser", "Boosted", "Suppressed", "Variable")])
 
-# Order the data frame by the count of "No growth"
+#Order the data frame by the count of "No growth"
 plot_data_Mix3 <- plot_data_Mix3[order(plot_data_Mix3$No_growth, decreasing = TRUE), ]
 
 plot_data_Mix3_1<-plot_data_Mix3[, c(1:7)]
-# Reshape the data into a long format
+#Reshape the data into a long format
 plot_data_long_Mix3 <- plot_data_Mix3_1 %>%
   pivot_longer(cols = -Species, names_to = "Status", values_to = "Count")
 
 
-## Reassign mix-specificity
+##Reassign mix-specificity
 plot_data_long_Mix1$Mix <- 1
 plot_data_long_Mix2$Mix <- 2
 plot_data_long_Mix3$Mix <- 3
 
-# Assign phylum names again
+#Assign phylum names again
 plot_data_long_Mix1 <- left_join(plot_data_long_Mix1, TrA1_phylum_gram, by = "Species")
 plot_data_long_Mix2 <- left_join(plot_data_long_Mix2, TrA1_phylum_gram, by = "Species")
 plot_data_long_Mix3 <- left_join(plot_data_long_Mix3, TrA1_phylum_gram, by = "Species")
 
 
-# Calculate the fractions of counts for each species
+#Calculate the fractions of counts for each species
 #Ratios would not work in case we have only survivors (as division by 0 would lead to 'Inf' output)
 
-# For Mix 1:
+#For Mix 1:
 plot_data_long_Mix1a <- plot_data_long_Mix1 %>%
   dplyr::group_by(Species) %>%
   dplyr::mutate(
@@ -1744,7 +1745,7 @@ plot_data_long_Mix1a <- plot_data_long_Mix1 %>%
     Fraction_benefitting = numerator2 / denominator2
   )
 
-# For Mix 2:
+#For Mix 2:
 plot_data_long_Mix2a <- plot_data_long_Mix2 %>%
   dplyr::group_by(Species) %>%
   dplyr::mutate(
@@ -1756,7 +1757,7 @@ plot_data_long_Mix2a <- plot_data_long_Mix2 %>%
     Fraction_benefitting = numerator2 / denominator2
   )
 
-# For Mix 3:
+#For Mix 3:
 plot_data_long_Mix3a <- plot_data_long_Mix3 %>%
   dplyr::group_by(Species) %>%
   dplyr::mutate(
@@ -1770,7 +1771,7 @@ plot_data_long_Mix3a <- plot_data_long_Mix3 %>%
 
 
 ###by Phylum
-# For Mix 1:
+#For Mix 1:
 plot_data_long_Mix1_phylum <- plot_data_long_Mix1 %>%
   dplyr::group_by(Phylum) %>%
   dplyr::mutate(
@@ -1782,7 +1783,7 @@ plot_data_long_Mix1_phylum <- plot_data_long_Mix1 %>%
     Fraction_benefitting = numerator2 / denominator2
   )
 
-# For Mix 2:
+#For Mix 2:
 plot_data_long_Mix2_phylum <- plot_data_long_Mix2 %>%
   dplyr::group_by(Phylum) %>%
   dplyr::mutate(
@@ -1794,7 +1795,7 @@ plot_data_long_Mix2_phylum <- plot_data_long_Mix2 %>%
     Fraction_benefitting = numerator2 / denominator2
   )
 
-# For Mix 3:
+#For Mix 3:
 plot_data_long_Mix3_phylum <- plot_data_long_Mix3 %>%
   dplyr::group_by(Phylum) %>%
   dplyr::mutate(
@@ -1807,7 +1808,7 @@ plot_data_long_Mix3_phylum <- plot_data_long_Mix3 %>%
   )
 
 ###By Gram stain
-# For Mix 1:
+#For Mix 1:
 plot_data_long_Mix1_gram <- plot_data_long_Mix1 %>%
   dplyr::group_by(Gram) %>%
   dplyr::mutate(
@@ -1819,7 +1820,7 @@ plot_data_long_Mix1_gram <- plot_data_long_Mix1 %>%
     Fraction_benefitting = numerator2 / denominator2
   )
 
-# For Mix 2:
+#For Mix 2:
 plot_data_long_Mix2_gram <- plot_data_long_Mix2 %>%
   dplyr::group_by(Gram) %>%
   dplyr::mutate(
@@ -1831,7 +1832,7 @@ plot_data_long_Mix2_gram <- plot_data_long_Mix2 %>%
     Fraction_benefitting = numerator2 / denominator2
   )
 
-# For Mix 3:
+#For Mix 3:
 plot_data_long_Mix3_gram <- plot_data_long_Mix3 %>%
   dplyr::group_by(Gram) %>%
   dplyr::mutate(
@@ -1862,12 +1863,12 @@ All_mixes_winner_loser_Mono_vs_cocult_Species<- rbind(plot_data_long_Mix1a, plot
 All_mixes_winner_loser_Mono_vs_cocult_Phylum<- rbind(plot_data_long_Mix1_phylum, plot_data_long_Mix2_phylum, plot_data_long_Mix3_phylum)
 All_mixes_winner_loser_Mono_vs_cocult_Gram<- rbind(plot_data_long_Mix1_gram, plot_data_long_Mix2_gram, plot_data_long_Mix3_gram)
 
-###Plotting relative success statuses and counts across media and species/phyla/gram
+###Plotting relative success statuses and counts across media and species/phyla/gram-stain
 #Plot fractions as Heatmaps
 All_mixes_winner_loser_Mono_vs_cocult_Species$Mix <- factor(All_mixes_winner_loser_Mono_vs_cocult_Species$Mix)
 
-# Define custom color gradient
-# Convert Mix and Species labels
+#Define custom color gradient
+#Convert Mix and Species labels
 All_mixes_winner_loser_Mono_vs_cocult_Species$Mix <- factor(All_mixes_winner_loser_Mono_vs_cocult_Species$Mix)
 All_mixes_winner_loser_Mono_vs_cocult_Species$Species <- gsub("_", " ", All_mixes_winner_loser_Mono_vs_cocult_Species$Species)
 All_mixes_winner_loser_Mono_vs_cocult_Species$Species <- paste(All_mixes_winner_loser_Mono_vs_cocult_Species$Species, " ")
@@ -1877,7 +1878,7 @@ sums <- aggregate(Fraction_surviving ~ Species, data = All_mixes_winner_loser_Mo
 All_mixes_winner_loser_Mono_vs_cocult_Species$Species <- factor(All_mixes_winner_loser_Mono_vs_cocult_Species$Species, 
                                                                 levels = sums$Species[order(sums$Fraction_surviving, decreasing = FALSE)])
 
-#Define custom color gradient
+#Define custom colour gradient
 colors <- c("white", "slategray1", "skyblue", "skyblue3", "skyblue4")
 breaks <- c(0, 0.25, 0.5, 0.75, 1)
 values <- seq(0, 1, length.out = length(breaks))
@@ -1896,12 +1897,12 @@ label_data <- label_data %>%
 # Check if y_position looks correct
 print(label_data)
 
-# Define colors for each Phylum
+#Define colors for each Phylum
 phylum_colors <- setNames(c("royalblue2", "yellow4", "turquoise4", "sienna", "magenta3"),
                           unique(label_data$Phylum))
 
 
-# Create the ggplot object
+#Create the ggplot object
 p <- ggplot(All_mixes_winner_loser_Mono_vs_cocult_Species, aes(x = as.character(Mix), y = Species, fill = Fraction_surviving)) +
   geom_tile() +
   scale_fill_gradientn(colors = col_fun, values = values, guide = "colorbar", limits = range(breaks), breaks = breaks, name = "Fraction") +
@@ -1914,7 +1915,7 @@ p <- ggplot(All_mixes_winner_loser_Mono_vs_cocult_Species, aes(x = as.character(
   labs(y = NULL, x = "Mix", title = "Fraction surviving in co-culture by Mix and Species") +
   scale_y_discrete(limits = levels(All_mixes_winner_loser_Mono_vs_cocult_Species$Species))  
 
-# Add the species names with geom_text
+#Add the species names with geom_text
 p <- p + geom_text(data = label_data, aes(x = 0, y = y_position, label = Species, color = Phylum), 
                    hjust = 1, check_overlap = FALSE, inherit.aes = FALSE) +
   scale_color_manual(values = phylum_colors) +
@@ -2122,7 +2123,7 @@ cor_result_fraction_surviving_genome_2<- cor.test(Transporter_annotations_and_fr
 cor_result_fraction_surviving_2
 cor_result_fraction_surviving_genome_2
 #here we see that when subsetting for F_S>0, genome size is no longer a significant correlator with F_S, but Transporter count is. 
-#Suggests that the correlation of transporters with a species' overall propensity to survive is not an artefact of sequence length
+#This suggests that the correlation of transporters with a species' overall propensity to survive is not an artefact of sequence length
 
 #Here, we investigate the correlations with F_B and also with outlier C. bolteae removed
 cor_result_fraction_benefitting<- cor.test(Transporter_annotations_and_fractions1$transporters, Transporter_annotations_and_fractions1$mean_Fraction_benefitting, method="spearman")
@@ -2133,7 +2134,7 @@ cor_result_fraction_benefitting
 cor_result_fraction_surviving1
 
 
-# Create the scatterplot, excluding outlier C. bolteae (but with correlation metrics of the complete dataframe)
+#Create the scatterplot, excluding outlier C. bolteae (but with correlation metrics of the complete dataframe)
 p <- ggplot(subset(Transporter_annotations_and_fractions1, Species != "C. bolteae"), aes(x=transporters, y=mean_Fraction_surviving)) +
   geom_smooth(method=lm, se=TRUE, color="grey30", linetype="dashed", fill="grey80") +  # Lighter grey shade for se
   geom_point(aes(shape=Gram), size = 3.5, color="grey30", alpha = 0.8) +
@@ -2369,7 +2370,7 @@ Average_fractions_and_richness_media$norm_Chemical_richness <- Average_fractions
 #Perform the correlation on the normalised data
 correlation5 <- cor.test(Average_fractions_and_richness_media$norm_Fraction_benefitting, Average_fractions_and_richness_media$norm_Fraction_surviving, method = "spearman")
 
-# Create the plot with the normalised data
+#Create the plot with the normalised data
 plot5 <- ggplot(Average_fractions_and_richness_media, aes(x = norm_Fraction_surviving, y = norm_Fraction_benefitting, color = Medium)) +
   geom_abline(slope = -1, intercept = 1, linetype = "solid", color = "slategray", size = 2) +
   geom_point(aes(size = Mean_Alpha_div), alpha = 0.8) +
@@ -2379,8 +2380,8 @@ plot5 <- ggplot(Average_fractions_and_richness_media, aes(x = norm_Fraction_surv
   scale_y_continuous(limits = c(0, 1.1), expand = c(0, 0)) +  
   scale_x_continuous(limits = c(0, 1.1), expand = c(0, 0)) +  
   theme_minimal() +
-  labs(x = "Normalized Mean Fraction Surviving across Mixes", 
-       y = "Normalized Mean Fraction Benefitting across Mixes",
+  labs(x = "Normalised Mean Fraction Surviving across Mixes", 
+       y = "Normalised Mean Fraction Benefitting across Mixes",
        size = "Mean alpha diversity across mixes")  +
   theme(axis.text = element_text(size = 14), 
         axis.title = element_text(size = 16),
@@ -2509,3 +2510,1865 @@ ggplot(Average_fractions_and_richness_media, aes(x = Medium, y = Monoculture_sur
   labs(x = "Medium", y = "Monoculture survivor richness") +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+
+
+###Untargeted metabolomics analysis
+
+## PCAs of Untargeted Metabolomics at endpoints (only pH 5.5 is in main figures, pH 7 can be found in the Supplementary Materials)
+#Stack the dataframes vertically, take all the relative abundance data out (except for the alpha divs)
+
+Metabolomics_Mix1 <- read_csv("Documents/Metabolomics_Mix1.csv")
+Metabolomics_Mix2 <- read_csv("Documents/Metabolomics_Mix2.csv")
+Metabolomics_Mix3 <- read_csv("Documents/Metabolomics_Mix3.csv")
+names(Metabolomics_Mix3)[1] <- "Sample_index"
+
+#Assign  alpha diversity of across mixes (from relative abundance dataframe, find: TrA1_relative_abundance_table_T)
+
+#Inspect averages here:
+Average_alpha_diversities_TrA1 <- TrA1_relative_abundance_table_T %>%
+  dplyr::group_by(Medium, Mix) %>%
+  dplyr::summarise(Average_Alpha_Diversity = mean(Alpha_diversity, na.rm = TRUE))
+
+print(Average_alpha_diversities_TrA1)
+
+##Assign mix-specificity here
+Metabolomics_Mix1$Mix <- 1
+Metabolomics_Mix2$Mix <- 2
+Metabolomics_Mix3$Mix <- 3
+
+#Merge appropriately:
+Metabolomics_Mix1a <- Metabolomics_Mix1 %>%
+  left_join(TrA1_relative_abundance_table_T %>% 
+              select(Replicate, Transfer, Medium, Mix, pH, Alpha_diversity),
+            by = c("Replicate", "Transfer", "Medium", "Mix", "pH"))
+
+Metabolomics_Mix2a <- Metabolomics_Mix2 %>%
+  left_join(TrA1_relative_abundance_table_T %>% 
+              select(Replicate, Transfer, Medium, Mix, pH, Alpha_diversity),
+            by = c("Replicate", "Transfer", "Medium", "Mix", "pH"))
+
+Metabolomics_Mix3a <- Metabolomics_Mix3 %>%
+  left_join(TrA1_relative_abundance_table_T %>% 
+              select(Replicate, Transfer, Medium, Mix, pH, Alpha_diversity),
+            by = c("Replicate", "Transfer", "Medium", "Mix", "pH"))
+
+All_mixes <- rbind(Metabolomics_Mix1a, Metabolomics_Mix2a, Metabolomics_Mix3a)
+#View(All_mixes)
+
+All_mixes<-na.omit(All_mixes)
+All_mixes_pH5.5<-subset(All_mixes, pH=="5.5")
+All_mixes_pH7<-subset(All_mixes, pH=="7")
+
+
+All_mixes_pH5.5_for_PCA <- All_mixes_pH5.5[, c(7:3486)]
+All_mixes_pH7_for_PCA <- All_mixes_pH7[, c(7:3486)]
+
+All_mixes_pH5.5_for_PCA <- All_mixes_pH5.5_for_PCA[, colSums(All_mixes_pH5.5_for_PCA) != 0]
+All_mixes_pH7_for_PCA <- All_mixes_pH7_for_PCA[, colSums(All_mixes_pH7_for_PCA) != 0]
+
+
+All_mixes_pH5.5_PCA <- prcomp(All_mixes_pH5.5_for_PCA, center = TRUE)
+All_mixes_pH7_PCA <- prcomp(All_mixes_pH7_for_PCA, center = TRUE)
+
+
+#Scale PCA in accordance with variance explained
+#First, calculate the proportion of variance explained by PC1 and PC2
+var_explained <- All_mixes_pH7_PCA$sdev^2 / sum(All_mixes_pH7_PCA$sdev^2)
+aspect_ratio <- var_explained[2] / var_explained[1]
+
+#Set theme first to not confuse layer imposed by ggbiplot
+theme_set(
+  theme_bw() +
+    theme(
+      axis.text.x = element_text(size = 13),  
+      axis.text.y = element_text(size = 13),  
+      axis.title.x = element_text(size = 12), 
+      axis.title.y = element_text(size = 12), 
+      legend.title = element_text(size = 12),
+      plot.title = element_text(size = 12),
+      legend.text = element_text(size = 12)
+    )
+)
+
+#Generate the PCA plot
+g <- ggbiplot(All_mixes_pH7_PCA, var.axes = FALSE, choice=c(1,2)) +
+  geom_point(aes(shape=as.factor(All_mixes_pH7$Mix), colour = as.factor(All_mixes_pH7$Medium), size=as.numeric(All_mixes_pH7$Alpha_diversity)), stroke=1.3) +
+  scale_color_manual(values=c("black", "#00AFBB", "#2e37fe", "darkorchid1", "green", "#0072B2", "indianred","gold1", "firebrick4", "springgreen3",  "chocolate1","#6C0BA9", "red", "#999999", "magenta"), name="Medium") +
+  scale_shape_manual(values = c(0, 1, 2), name = "Mix") +
+  scale_size(name = "Alpha 
+Diversity") +
+  labs(title = "PCA Metabolomics all mixes at pH 7, Endpoint Tr. 9 (and 8 for Mix 2)") +
+  guides(color = guide_legend(override.aes = list(size = 5))) +
+  coord_fixed(ratio = aspect_ratio) +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank()  
+  )
+
+g
+
+#Scale PCA in accordance with variance explained
+#Calculate the proportion of variance explained by PC1 and PC2
+var_explained <- All_mixes_pH5.5_PCA$sdev^2 / sum(All_mixes_pH5.5_PCA$sdev^2)
+aspect_ratio <- var_explained[2] / var_explained[1]
+
+#Set theme first to not confuse layer imposed by ggbiplot
+theme_set(
+  theme_bw() +
+    theme(
+      axis.text.x = element_text(size = 13), 
+      axis.text.y = element_text(size = 13),  
+      axis.title.x = element_text(size = 12), 
+      axis.title.y = element_text(size = 12), 
+      legend.title = element_text(size = 12),
+      plot.title = element_text(size = 12),
+      legend.text = element_text(size = 12),
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      panel.background = element_blank(),
+      legend.position = "right"
+    )
+)
+
+
+#Generate the PCA plot: "PCA Metabolomics all mixes at pH 5.5, Endpoint Tr. 9 (and 8 for Mix 2)"
+g <- ggbiplot(All_mixes_pH5.5_PCA, var.axes = FALSE, choice=c(1,2)) +
+  geom_point(aes(shape=as.factor(All_mixes_pH5.5$Mix), colour = as.factor(All_mixes_pH5.5$Medium), size=as.numeric(All_mixes_pH5.5$Alpha_diversity)), stroke=1.3) +
+  scale_color_manual(values=c("#00AFBB", "#2e37fe", "darkorchid1", "#0072B2", "indianred","gold1", "firebrick4", "springgreen3",  "chocolate1","#6C0BA9", "red", "#999999", "magenta"), name="Medium") +
+  scale_shape_manual(values = c(0, 1, 2), name = "Mix") +
+  scale_size(name = "Alpha 
+Diversity") +
+  guides(color = guide_legend(override.aes = list(size = 5))) +
+  coord_fixed(ratio = aspect_ratio) 
+g
+
+
+##Now make a similar PCA for empty medium; inspect if very similar to endpoints
+#subset metabolomics data to have empty media only:
+Metabolomics_enrichment_analysis <- read_csv("Documents/Metabolomics_enrichment_analysis.csv")
+Metabolomics_empty_media  <- subset(Metabolomics_enrichment_analysis, Mix == "None")
+
+View(Metabolomics_empty_media)
+
+Metabolomics_empty_media_1<-na.omit(Metabolomics_empty_media)
+Metabolomics_empty_media_1_pH5.5<-subset(Metabolomics_empty_media_1, pH=="5.5")
+Metabolomics_empty_media_1_pH7<-subset(Metabolomics_empty_media_1, pH=="7")
+
+
+Metabolomics_empty_media_1_pH5.5_for_PCA <- Metabolomics_empty_media_1_pH5.5[, c(7:3486)]
+Metabolomics_empty_media_1_pH7_for_PCA <- Metabolomics_empty_media_1_pH7[, c(7:3486)]
+
+Metabolomics_empty_media_1_pH5.5_for_PCA <- Metabolomics_empty_media_1_pH5.5_for_PCA[, colSums(Metabolomics_empty_media_1_pH5.5_for_PCA) != 0]
+Metabolomics_empty_media_1_pH7_for_PCA <- Metabolomics_empty_media_1_pH7_for_PCA[, colSums(Metabolomics_empty_media_1_pH7_for_PCA) != 0]
+
+#with all media
+Metabolomics_empty_media_1_pH5.5_PCA  <- prcomp(Metabolomics_empty_media_1_pH5.5_for_PCA , center = TRUE)
+Metabolomics_empty_media_1_pH7_PCA <- prcomp(Metabolomics_empty_media_1_pH7_for_PCA, center = TRUE)
+
+
+#Scale PCA in accordance with variance explained
+#Calculate the proportion of variance explained by PC1 and PC2
+var_explained <- Metabolomics_empty_media_1_pH5.5_PCA$sdev^2 / sum(Metabolomics_empty_media_1_pH5.5_PCA$sdev^2)
+aspect_ratio <- var_explained[2] / var_explained[1]
+
+#Generate the PCA plot
+g <- ggbiplot(Metabolomics_empty_media_1_pH5.5_PCA, var.axes = FALSE, choice=c(1,2)) +
+  geom_point(aes(colour = as.factor(Metabolomics_empty_media_1_pH5.5$Medium), shape=as.factor(Metabolomics_empty_media_1_pH5.5$Replicate), size=3, alpha = 0.6), stroke=1.3) +
+  scale_color_manual(values=c("black", "#00AFBB", "#2e37fe", "darkorchid1", "#0072B2", "indianred","gold1", "firebrick4", "springgreen3",  "chocolate1","#6C0BA9", "red", "#999999", "magenta"), name="Medium") +
+  labs(title = "PCA Metabolomics empty media, T0, pH 5.5") +
+  theme(axis.text = element_text(size = 16), 
+        axis.title = element_text(size = 16),
+        legend.title = element_text(size = 16),
+        plot.title = element_text(size = 16),
+        legend.text = element_text(size = 14)) +
+  guides(color = guide_legend(override.aes = list(size = 5))) +
+  coord_fixed(ratio = aspect_ratio) +
+  theme_bw()
+g
+
+
+#pH 7
+var_explained <- Metabolomics_empty_media_1_pH7_PCA$sdev^2 / sum(Metabolomics_empty_media_1_pH7_PCA$sdev^2)
+aspect_ratio <- var_explained[2] / var_explained[1]
+g <- ggbiplot(Metabolomics_empty_media_1_pH7_PCA, var.axes = FALSE, choice=c(1,2)) +
+  geom_point(aes(colour = as.factor(Metabolomics_empty_media_1_pH7$Medium), shape=as.factor(Metabolomics_empty_media_1_pH7$Replicate), size=3, alpha = 0.6), stroke=1.3) +
+  scale_color_manual(values=c("black", "#00AFBB", "#2e37fe", "darkorchid1","green", "#0072B2", "indianred","gold1", "firebrick4", "springgreen3",  "chocolate1","#6C0BA9", "red", "#999999", "magenta"), name="Medium") +
+  labs(title = "PCA Metabolomics empty media, T0, pH 7") +
+  theme(axis.text = element_text(size = 16), 
+        axis.title = element_text(size = 16),
+        legend.title = element_text(size = 16),
+        plot.title = element_text(size = 16),
+        legend.text = element_text(size = 14)) +
+  guides(color = guide_legend(override.aes = list(size = 5))) +
+  coord_fixed(ratio = aspect_ratio) +
+  theme_bw()
+g
+
+
+
+#subsetted to exclude M4, replicate 3 (outlier) and media not used in the Ph 5.5 Tr9 PCA
+Metabolomics_empty_media_1_pH5.5a<-subset(Metabolomics_empty_media_1_pH5.5, Medium !="1" & !(Medium == "4" & Replicate == 3))
+
+Metabolomics_empty_media_1_pH5.5_for_PCAa <- Metabolomics_empty_media_1_pH5.5a[, c(7:3486)]
+
+Metabolomics_empty_media_1_pH5.5_for_PCAa <- Metabolomics_empty_media_1_pH5.5_for_PCAa[, colSums(Metabolomics_empty_media_1_pH5.5_for_PCAa) != 0]
+
+Metabolomics_empty_media_1_pH5.5_PCAa  <- prcomp(Metabolomics_empty_media_1_pH5.5_for_PCAa , center = TRUE)
+
+#subsetted to exclude M8, replicate 2 (outlier) 
+Metabolomics_empty_media_1_pH7a<-subset(Metabolomics_empty_media_1_pH7, !(Medium == "8" & Replicate == 2))
+
+Metabolomics_empty_media_1_pH7_for_PCAa <- Metabolomics_empty_media_1_pH7a[, c(7:3486)]
+
+Metabolomics_empty_media_1_pH7_for_PCAa <- Metabolomics_empty_media_1_pH7_for_PCAa[, colSums(Metabolomics_empty_media_1_pH7_for_PCAa) != 0]
+
+Metabolomics_empty_media_1_pH7_PCAa  <- prcomp(Metabolomics_empty_media_1_pH7_for_PCAa , center = TRUE)
+
+var_explained <- Metabolomics_empty_media_1_pH5.5_PCAa$sdev^2 / sum(Metabolomics_empty_media_1_pH5.5_PCAa$sdev^2)
+aspect_ratio <- var_explained[2] / var_explained[1]
+# Generate the PCA plot, shape = Mix 
+g <- ggbiplot(Metabolomics_empty_media_1_pH5.5_PCAa, var.axes = FALSE, choice=c(1,2)) +
+  geom_point(aes(colour = as.factor(Metabolomics_empty_media_1_pH5.5a$Medium), shape=as.factor(Metabolomics_empty_media_1_pH5.5a$Replicate), size=3, alpha = 0.6), stroke=1.3) +
+  scale_color_manual(values=c("#00AFBB", "#2e37fe", "darkorchid1", "#0072B2", "indianred","gold1", "firebrick4", "springgreen3",  "chocolate1","#6C0BA9", "red", "#999999", "magenta"), name="Medium") +
+  labs(title = "PCA Metabolomics empty media, T0") +
+  theme(axis.text = element_text(size = 16), 
+        axis.title = element_text(size = 16),
+        legend.title = element_text(size = 16),
+        plot.title = element_text(size = 16),
+        legend.text = element_text(size = 14)) +
+  guides(color = guide_legend(override.aes = list(size = 5))) +
+  coord_fixed(ratio = aspect_ratio) +
+  theme_bw()
+g
+
+#No shape for mix: Medium 4 rep 3 excluded because outlier
+var_explained <- Metabolomics_empty_media_1_pH5.5_PCAa$sdev^2 / sum(Metabolomics_empty_media_1_pH5.5_PCAa$sdev^2)
+aspect_ratio <- var_explained[2] / var_explained[1]
+g <- ggbiplot(Metabolomics_empty_media_1_pH5.5_PCAa, var.axes = FALSE, choice=c(1,2)) +
+  geom_point(aes(colour = as.factor(Metabolomics_empty_media_1_pH5.5a$Medium), size=3, alpha = 0.6), stroke=1.3) +
+  scale_color_manual(values=c("#00AFBB", "#2e37fe", "darkorchid1", "#0072B2", "indianred","gold1", "firebrick4", "springgreen3",  "chocolate1","#6C0BA9", "red", "#999999", "magenta"), name="Medium") +
+  labs(title = "PCA Metabolomics empty media, T0, pH 5.5") +
+  theme(axis.text = element_text(size = 16), 
+        axis.title = element_text(size = 16),
+        legend.title = element_text(size = 16),
+        plot.title = element_text(size = 16),
+        legend.text = element_text(size = 14)) +
+  guides(color = guide_legend(override.aes = list(size = 5))) +
+  coord_fixed(ratio = aspect_ratio) +
+  theme_bw()
+g
+
+#Medium 8 rep 2 excluded because outlier
+var_explained <- Metabolomics_empty_media_1_pH7_PCAa$sdev^2 / sum(Metabolomics_empty_media_1_pH7_PCAa$sdev^2)
+aspect_ratio <- var_explained[2] / var_explained[1]
+g <- ggbiplot(Metabolomics_empty_media_1_pH7_PCAa, var.axes = FALSE, choice=c(1,2)) +
+  geom_point(aes(colour = as.factor(Metabolomics_empty_media_1_pH7a$Medium), size=3, alpha = 0.6), stroke=1.3) +
+  scale_color_manual(values=c("black","#00AFBB", "#2e37fe", "green", "darkorchid1", "#0072B2", "indianred","gold1", "firebrick4", "springgreen3",  "chocolate1","#6C0BA9", "red", "#999999", "magenta"), name="Medium") +
+  labs(title = "PCA Metabolomics empty media, T0, pH 7") +
+  theme(axis.text = element_text(size = 16), 
+        axis.title = element_text(size = 16),
+        legend.title = element_text(size = 16),
+        plot.title = element_text(size = 16),
+        legend.text = element_text(size = 14)) +
+  guides(color = guide_legend(override.aes = list(size = 5))) +
+  coord_fixed(ratio = aspect_ratio) +
+  theme_bw()
+g
+
+
+
+
+
+
+
+
+
+###Plotting cosine vector distances of metabolomics
+Cosine_vector_distances <- read_csv("Documents/Cosine_vector_distances.csv")
+
+# We exclude 15A since we do not have relative abundance data for this Medium 
+Cosine_vector_distance <- subset(Cosine_vector_distances, Mix %in% c("1", "2", "3") & Medium != "15A")
+#View(Cosine_vector_distance)
+
+# Subset the data to include only transfer 1 through 8 (where transfer 7 is the sliding window between transfer 8 and 7)
+df_sub_CVD <- subset(Cosine_vector_distance, Transfer <= 7)
+#View(df_sub_CVD)
+
+#Convert 'Transfer' column to factor for proper ordering on x-axis
+df_sub_CVD$Transfer <- factor(df_sub_CVD$Transfer)
+
+#Convert 'Replicate' column to factor
+df_sub_CVD$Replicate <- factor(df_sub_CVD$Replicate)
+
+#First, plot all trajectories over each other to get a general idea of stabilisation
+df_sub_CVD$grouping <- with(df_sub_CVD, paste(Medium, Mix, Replicate, pH))
+df_sub_CVD$Transfer <- as.numeric(as.character(df_sub_CVD$Transfer))
+
+#Adjust the Transfer value from 8 to 7 (due to the chosen windows for which cosine distance was calculated, i.e., difference between t0 and t2 was calculated for the line at Transfer = 0)
+#df_sub_CVD$Transfer[df_sub_CVD$Transfer == 8] <- 7
+
+#Add visual adjustment to Transfer (since window between Transfer 6 and 8 jumped past Transfer 7 (for which we have no metabolomics measurements))
+df_sub_CVD$visual_transfer <- ifelse(df_sub_CVD$Transfer == 6, 7, df_sub_CVD$Transfer)
+
+
+
+#Plot (and disregard a few outliers of > 0.01)
+ggplot(subset(df_sub_CVD, cosine_vector_distance < 0.01), aes(x = visual_transfer, y = cosine_vector_distance, group = grouping)) +
+  geom_line(color = "darkslategrey", alpha=0.2) +
+  stat_smooth(aes(group = 1), se = FALSE, linetype = "dashed", color = "darkslategrey", method="loess", alpha=0.5) +
+  labs(x = "Transfer", y = "Cosine Vector Distance", title = "Cosine Vector Distances across all media and mixes, pH 7") +
+  theme_minimal() +
+  scale_x_continuous(breaks = c(0, 2, 3, 4, 5, 7), 
+                     labels = c('0-2', '2-3', '3-4', '4-5', '5-6', '6-8')) +
+  theme(axis.text = element_text(size = 12),      
+        axis.title = element_text(size = 14),     
+        plot.title = element_text(size = 16),     
+        panel.grid.minor.x = element_blank())     
+
+
+##Now distinguishing between richer media versus poorer media
+
+#Define two groups of media
+group1_media <- c("15B", "16", "14", "1", "13")
+group2_media <- c("8", "9", "5", "3", "2", "7", "11", "10", "4")
+
+#Assign colours based on group membership
+df_sub_CVD$line_color <- ifelse(df_sub_CVD$Medium %in% group1_media, "Poorer media",
+                                ifelse(df_sub_CVD$Medium %in% group2_media, "Richer media", "Other"))
+
+
+#Generate the plot with the new colour aesthetic
+ggplot(subset(df_sub_CVD, cosine_vector_distance < 0.04), aes(x = visual_transfer, y = cosine_vector_distance, group = grouping)) +
+  geom_line(aes(color = line_color), alpha = 0.3) +
+  stat_smooth(aes(group = 1), se = FALSE, linetype = "longdash", color = "grey23", method = "loess", alpha = 0.5) +
+  labs(x = "Transfer", y = "Cosine Vector Distance", title = "Cosine Vector Distances across all media and mixes, pH 7") +
+  theme_minimal() +
+  scale_x_continuous(breaks = c(0, 2, 3, 4, 5, 7), labels = c('0-2', '2-3', '3-4', '4-5', '5-6', '6-8'), limits = c(0, 7)) +
+  expand_limits(y = 0) +
+  theme(
+    axis.text = element_text(size = 12), 
+    axis.title = element_text(size = 12), 
+    plot.title = element_text(size = 12), 
+    panel.grid.minor.x = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    axis.line = element_line(color = "black"),
+    axis.ticks = element_line(color = "black"),
+    legend.text = element_text(size = 10), 
+  ) +
+  scale_color_manual(values = c("Poorer media" = "#ee4035", "Richer media" = "#0392cf"), name = "Medium group")  
+
+
+
+
+
+
+
+
+##Next, identifying significant depletion/enrichment of certain ions/metabolites relative to the media controls
+
+#For pH 7 only, we can use/adjust the following dataframe that was used before
+Metabolic_enrichment_analysis <- subset(Cosine_vector_distances, Transfer == 0 | Transfer == 9)
+Metabolic_enrichment_analysis$Mix <- ifelse(Metabolic_enrichment_analysis$Transfer == 0, "None", Metabolic_enrichment_analysis$Mix)
+
+#Load the following dataset for both pH 7 and pH 5.5
+Metabolomics_enrichment_analysis
+
+
+### Assigning log-fold changes relative to the medium controls
+##Looping through all conditions
+
+pH_vals <- c(5.5, 7)
+mix_vals <- c("1", "2", "3")
+medium_vals <- c("1","2", "3", "4", "5", "7", "8", "9", "10", "11", "13","14","15B","16")  
+
+
+combined_df <- data.frame()  # Create an empty data frame to store the combined results
+#library(edgeR)
+
+for (pH_val in pH_vals) {
+  for (mix_val in mix_vals) {
+    for (medium_val in medium_vals) {
+      df <- subset(Metabolomics_enrichment_analysis, (pH == pH_val & (Mix == mix_val | Mix == "None") & Medium == medium_val))
+      
+      if (nrow(df) == 0) {
+        # Skip combinations with no measurements
+        next
+      }
+      
+      header <- c()
+      for (i in 1:length(rownames(df))) {
+        header[i] <- paste(df$Mix[i], df$Medium[i], df$pH[i], "rep", df$Replicate[i], sep = "_")
+      }
+      df <- t(df[, 7:length(colnames(df))])
+      colnames(df) <- header
+      df <- round(df^10)
+      df <- df[apply(df, 1, stats::sd) != 0, ]
+      
+      group <- factor(str_split_fixed(colnames(df), "_", n = 2)[, 1])
+      y <- DGEList(counts = df, group = group)
+      design <- model.matrix(~group)
+      y <- estimateDisp(y, design)
+      fit <- glmFit(y, design)
+      lrt <- glmLRT(fit, coef = 2)
+      tt <- topTags(lrt, n = Inf)$table
+      
+      #Fix for depletion and enrichment inversion
+      tt$logFC <- -tt$logFC
+      
+      # Add columns specifying pH_val, mix_val, and medium_val
+      tt$pH_val <- pH_val
+      tt$mix_val <- mix_val
+      tt$medium_val <- medium_val
+      
+      # Add rownames as a separate column
+      tt$RowName <- rownames(tt)
+      
+      # Append the results to the combined dataframe
+      combined_df <- bind_rows(combined_df, tt)
+    }
+  }
+}
+
+
+# Write the combined dataframe to a CSV file
+#write.csv(combined_df, "Downloads/combined_results.csv", row.names = FALSE)
+
+# Subset for only significant values (FDR-adjusted P < 0.05)
+combined_results_significant <- subset(combined_df, FDR < 0.05)
+
+#View(combined_results_significant)
+
+#Take only relevant columns 
+combined_results_significant<-combined_results_significant[,c(1,6:9)]
+#View(combined_results_significant)
+
+
+#Pivot data to reshape it with RowName values as columns
+pca_df <- combined_results_significant %>%
+  pivot_wider(names_from = RowName, values_from = logFC, values_fill = 0)
+
+#Rearrange the columns to have pH_val, mix_val, and medium_val as the first columns
+pca_df <- pca_df %>%
+  select(pH_val, mix_val, medium_val, everything())
+
+#Sort the rows based on pH_val, mix_val, and medium_val columns
+pca_df <- pca_df %>%
+  arrange(pH_val, mix_val, medium_val)
+
+#Write the transformed data frame to a new CSV file
+#write.csv(pca_df, "Downloads/pca_input_data.csv", row.names = FALSE)
+
+#View(pca_df)
+
+#First, all:
+Significant_logFC_values <- pca_df
+#View(Significant_logFC_values)
+#For PCA, remove columns with experimental details and keep columns with logfold change values only
+Significant_logFC_values_for_PCA<-Significant_logFC_values[,c(4:2923)]
+#Significant_logFC_values_for_PCA <- Significant_logFC_values_for_PCA[, colSums(Significant_logFC_values_for_PCA) != 0]
+
+Significant_logFC_values_PCA <- prcomp(Significant_logFC_values_for_PCA, center = TRUE)
+pH_val_c<-as.factor(Significant_logFC_values$pH_val)
+
+var_explained <- Significant_logFC_values_PCA$sdev^2 / sum(Significant_logFC_values_PCA$sdev^2)
+aspect_ratio <- var_explained[2] / var_explained[1]
+g<-ggbiplot(Significant_logFC_values_PCA , var.axes = FALSE, choice=c(1,2))
+g1<-g+geom_point(aes(shape=as.factor(Significant_logFC_values$mix_val),colour = as.factor(Significant_logFC_values$medium_val), size=as.factor(Significant_logFC_values$pH_val)), stroke=1.3) + theme_bw()
+g1 +  scale_color_manual(values=c("black", "#00AFBB", "#2e37fe", "darkorchid1", "green", "#0072B2", "indianred","gold1", "firebrick4", "springgreen3",  "chocolate1","#6C0BA9", "red", "#999999", "magenta"), name="Medium") +
+  scale_shape_manual(values = c(0, 1, 2), name = "Mix") +
+  scale_size_manual(values= c(1.5,4), name = "pH") +
+  coord_fixed(ratio = aspect_ratio)  +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank(),
+        axis.text.x = element_text(size = 12), # Increase font size for x-axis labels
+        axis.text.y = element_text(size = 12))
+
+labs(title = "PCA Metabolomics, compounds with significant LogFC, all mixes & pH regimes")
+
+
+
+##Count sum significantly enriched and significantly depleted across all conditions
+#Calculate the number of significantly enriched values for each row
+enriched_counts <- rowSums(Significant_logFC_values[, 4:2923] > 0)
+
+#Calculate the number of significantly depleted values for each row
+depleted_counts <- rowSums(Significant_logFC_values[, 3:2923] < 0)
+
+#Calculate the ratio of significantly enriched to depleted
+ratio <- enriched_counts / depleted_counts
+
+#Create the new dataframe
+depleted_vs_enriched <- data.frame(
+  pH_val = Significant_logFC_values$pH_val,
+  mix_val = Significant_logFC_values$mix_val,
+  medium_val = Significant_logFC_values$medium_val,
+  significantly_enriched = enriched_counts,
+  significantly_depleted = depleted_counts,
+  ratio = ratio
+)
+
+#View(depleted_vs_enriched)
+
+#replace names of first columns so it is consistent with relative abundance data
+colnames(depleted_vs_enriched) <- c("pH", "Mix", "Medium", "significantly_enriched", "significantly_depleted", "ratio")
+
+#print(depleted_vs_enriched)
+
+
+#Boxplots of significantly enriched compounds across pH, mixes and Media (excluding E. coli dominated M16 and M15B, see figure caption)
+p <- ggboxplot(subset(depleted_vs_enriched, !(Medium %in% c("16", "15B"))), x = "pH", y = "ratio",
+               add = "mean", 
+               xlab = "pH", ylab = "Ratio significantly enriched:depleted compounds
+               per pH (across mixes and media)",
+               legend.title = "pH", legend.values = c("5.5", "7"),
+               outlier.shape = NA) +
+  geom_jitter(width = 0.2, alpha = 0.5, aes(color = ifelse(Medium == "9", "9", "other"))) + # Color-code the datapoints based on Medium
+  scale_color_manual(values = c("9" = "red", "other" = "black"), guide = FALSE) + # Set the desired color for "Medium" = "9" and hide the legend
+  stat_compare_means(comparisons = list(c("5.5", "7")), label = "p.value", method = "wilcox.test")
+p
+
+medians_per_pH <- aggregate(ratio ~ pH, data = subset(depleted_vs_enriched, !(Medium %in% c("16", "15B"))), FUN = median)
+print(medians_per_pH)
+
+
+p <- ggboxplot(subset(depleted_vs_enriched, !(Medium %in% c("16", "15B"))), x = "Mix", y = "ratio",
+               add = "mean", 
+               xlab = "Mix", ylab = "Ratio significantly enriched:depleted compounds 
+               per Mix (across pHs and media)",
+               legend.title = "Mix",
+               outlier.shape = NA) +
+  geom_jitter(width = 0.2, alpha = 0.5, aes(color = ifelse(Medium == "9", "9", "other"))) + # Color-code the datapoints based on Medium
+  scale_color_manual(values = c("9" = "red", "other" = "black"), guide = FALSE) + # Set the desired color for "Medium" = "9" and hide the legend
+  stat_compare_means(comparisons = list(c("1", "2"), c("1", "3"), c("2","3")), label = "p.signif", method = "wilcox.test", p.adjust.method = "BH")
+p
+
+medians_per_mix <- aggregate(ratio ~ Mix, data = subset(depleted_vs_enriched, !(Medium %in% c("16", "15B"))), FUN = median)
+print(medians_per_mix)
+
+#Now with mean alpha diversities
+All_mixes
+
+p <- ggboxplot(subset(All_mixes, !(Medium %in% c("16", "15B"))), x = "pH", y = "Alpha_diversity",
+               add = "mean", 
+               xlab = "pH", ylab = "Shannon alpha diversity
+               per pH (across mixes and media)",
+               legend.title = "pH", legend.values = c("5.5", "7"),
+               outlier.shape = NA) +
+  geom_jitter(width = 0.2, alpha = 0.5, aes(color = ifelse(Medium == "9", "9", "other"))) + # Color-code the datapoints based on Medium
+  scale_color_manual(values = c("9" = "darkred", "other" = "black"), guide = FALSE) + # Set the desired color for "Medium" = "9" and hide the legend
+  stat_compare_means(comparisons = list(c("5.5", "7")), label = "p.signif", method = "wilcox.test")
+p
+
+medians_per_pH <- aggregate(Alpha_diversity ~ pH, data = subset(All_mixes, !(Medium %in% c("16", "15B"))), FUN = median)
+print(medians_per_pH)
+
+
+p <- ggboxplot(subset(All_mixes, !(Medium %in% c("16", "15B"))), x = "Mix", y = "Alpha_diversity",
+               add = "mean", 
+               xlab = "Mix", ylab = "Shannon alpha diversity
+               per Mix (across pHs and media)",
+               legend.title = "Mix",
+               outlier.shape = NA) +
+  geom_jitter(width = 0.2, alpha = 0.5, aes(color = ifelse(Medium == "9", "9", "other"))) + # Color-code the datapoints based on Medium
+  scale_color_manual(values = c("9" = "darkred", "other" = "black"), guide = FALSE) + # Set the desired color for "Medium" = "9" and hide the legend
+  stat_compare_means(comparisons = list(c("1", "2"), c("1", "3"), c("2","3")), label = "p.signif", method = "wilcox.test", p.adjust.method = "BH")
+p
+
+
+medians_per_mix <- aggregate(Alpha_diversity ~ Mix, data = subset(All_mixes, !(Medium %in% c("16", "15B"))), FUN = median)
+print(medians_per_mix)
+
+
+###Annotation scores for significantly enriched versus significantly depleted compounds:
+##To annotate compounds using the Chemical taxonomy provided 
+annotation <- read_xlsx("~/Downloads/170329_EMBL_microbial supernatants_ANNOTATION.xlsx")
+annot_df <- as.data.frame(annotation$`ion index`)
+
+##Since not all ions are annotated (i.e, "N/A"), whereas some ions are annotated multiple times, 
+#we needed to account for the number of times each compound is annotated, so that their LogFC score is proportionally distributed:
+
+annot_df <- cbind(annot_df, str_split_fixed(annotation$`Chemical taxonomy`, " => ", n =4)[,2:3])
+colnames(annot_df) <- c("ion_id", "cl2", "cl3")
+pre_id <- 1
+tmp_df <- data.frame(ion_id = numeric(), cl2 = character(), cl3 = character())
+for (i in 1:length(rownames(annot_df))){
+  if (annot_df[i,1] > (pre_id+1)){
+    for (j in 1:(annot_df[i,1] - pre_id - 1)){
+      tmp_df <- rbind(tmp_df, data.frame(ion_id = (pre_id+j), cl2 = "N/A", cl3 = "N/A"))
+    }
+  }
+  tmp_df <- rbind(tmp_df, annot_df[i,])
+  pre_id <- annot_df[i,1]
+}
+
+##Now, annotate the file with significantly enriched and depleted ions
+
+##For any single experimental condition:
+combined_results_significant_Mix1_pH5.5_Med1 <- subset(combined_results_significant, pH_val == 5.5 & mix_val == "1" & medium_val=="1")
+
+rownames(combined_results_significant_Mix1_pH5.5_Med1) <- combined_results_significant_Mix1_pH5.5_Med1$RowName
+#View(combined_results_significant_Mix1_pH5.5_Med1)
+
+annot_df <- tmp_df
+for (i in (annot_df[length(rownames(annot_df)), 1]+1):max(as.numeric(rownames(combined_results_significant_Mix1_pH5.5_Med1)))){
+  annot_df <- rbind(annot_df, data.frame(ion_id = i, cl2 = "N/A", cl3 = "N/A"))
+}
+
+# Create an empty dataframe to store the results
+to_plot_df <- data.frame(Side = character(), Class = character(), count = numeric())
+
+to_plot_df <- data.frame(Side = character(), Class = character(), count = numeric())
+enriched <- subset(combined_results_significant_Mix1_pH5.5_Med1, (logFC > 1))
+depleted <- subset(combined_results_significant_Mix1_pH5.5_Med1, (logFC < -1))
+class_level <- "cl2"
+working_df <- depleted
+
+class_df <- data.frame(Class = character(), count = numeric())
+for (i in rownames(working_df)){
+  tmp_df <- subset(annot_df, ion_id == i)
+  tmp_count <- as.data.frame(table(tmp_df[,class_level]))
+  for (j in 1:length(rownames(tmp_count))){
+    if (length(class_df[class_df$Class == tmp_count[j,1],1]) == 1){
+      class_df[class_df$Class == tmp_count[j,1],2] <- class_df[class_df$Class == tmp_count[j,1],2] + tmp_count[j,2] / sum(tmp_count$Freq)
+    }
+    else{
+      class_df <- rbind(class_df, data.frame(Class = as.character(tmp_count[j,1]), count = tmp_count[j,2] / sum(tmp_count$Freq)))
+    }
+  }
+}
+to_plot_df <- rbind(to_plot_df,(cbind(Side = "depleted", class_df)))
+
+
+
+
+##Below: Automate annotation for all combinations:
+
+# Create unique combinations of pH_val, mix_val, and medium_val
+unique_combinations <- expand.grid(
+  pH_val = unique(combined_results_significant$pH_val),
+  mix_val = unique(combined_results_significant$mix_val),
+  medium_val = unique(combined_results_significant$medium_val)
+)
+
+#Initialise an empty list for storing results
+results_list <- list()
+
+#Loop through each combination
+for (comb_idx in 1:nrow(unique_combinations)) {
+  combo <- unique_combinations[comb_idx, ]
+  
+  #Subset the main data frame based on the current combination
+  subset_df <- subset(combined_results_significant, pH_val == combo$pH_val & mix_val == combo$mix_val & medium_val == combo$medium_val)
+  
+  #Set row names to correspond with ion_IDs as stored in RowName column:
+  rownames(subset_df) <- subset_df$RowName
+  
+  #Initialise 'to_plot_df' for each combination
+  to_plot_df <- data.frame(Side = character(), Class = character(), count = numeric())
+  
+  #Process both significantly enriched and depleted
+  sides <- c("enriched", "depleted")
+  for (side in sides) {
+    working_df <- if (side == "enriched") {
+      subset(subset_df, logFC > 1)
+    } else {
+      subset(subset_df, logFC < -1)
+    }
+    
+    class_df <- data.frame(Class = character(), count = numeric())
+    for (row_id in rownames(working_df)) {
+      tmp_df <- subset(annot_df, ion_id == as.numeric(row_id))
+      tmp_count <- as.data.frame(table(tmp_df[, class_level]))
+      
+      # Ensure tmp_count has data before proceeding
+      if (nrow(tmp_count) > 0) {
+        for (j in 1:nrow(tmp_count)) {
+          # Calculate the proportion
+          prop <- tmp_count[j, 2] / sum(tmp_count$Freq)
+          
+          # Check if the Class already exists in class_df
+          existing_row <- which(class_df$Class == as.character(tmp_count[j, 1]))
+          
+          if (length(existing_row) == 1) {
+            # If it exists, update the count
+            class_df[existing_row, "count"] <- class_df[existing_row, "count"] + prop
+          } else {
+            # If it does not exist, add it to class_df
+            class_df <- rbind(class_df, data.frame(Class = as.character(tmp_count[j, 1]), count = prop))
+          }
+        }
+      }
+    }
+    
+    #Only combine if class_df is not empty
+    if (nrow(class_df) > 0) {
+      to_plot_df <- rbind(to_plot_df, cbind(Side = rep(side, nrow(class_df)), class_df))
+    }
+  }
+  
+  #Store the annotation score result with a unique name in the list
+  results_list[[paste(combo$pH_val, combo$mix_val, combo$medium_val, sep = "_")]] <- to_plot_df
+}
+
+
+#Combine all dataframes in results_list into one
+combined_results <- do.call(rbind, results_list)
+
+#Add a 'Combo' column to indicate the source combination for each row
+combined_results$Combo <- rep(names(results_list), sapply(results_list, nrow))
+
+#Fix the row names after combining, if necessary
+rownames(combined_results) <- NULL
+
+
+##Now prepare combined_results for heatmap, and also calculate a score in which we subtract depleted from enriched per class for any experimental combination:
+library(dplyr)
+
+#Group by 'Combo' and 'Class' and calculate the score
+combined_annotation_results_scores <- combined_results %>%
+  group_by(Combo, Class) %>%
+  dplyr::summarise(
+    enriched_score = sum(count[Side == "enriched"]),
+    depleted_score = sum(count[Side == "depleted"]),
+    enriched_versus_depleted_score = enriched_score - depleted_score
+  ) %>%
+  ungroup()
+
+# Split the 'Combo' column into 'pH', 'Mix', and 'Medium'
+combined_annotation_results_scores <- combined_annotation_results_scores %>%
+  mutate(
+    pH = as.numeric(sapply(strsplit(as.character(Combo), "_"), `[`, 1)),
+    Mix = as.numeric(sapply(strsplit(as.character(Combo), "_"), `[`, 2)),
+    Medium = as.character(sapply(strsplit(as.character(Combo), "_"), `[`, 3))
+  ) %>%
+  select(Combo, pH, Mix, Medium, Class, enriched_score, depleted_score, enriched_versus_depleted_score)
+
+# View the structure of the new dataframe
+str(combined_annotation_results_scores)
+
+#Generate heatamp, take Non-Annotated ions out:
+g1 <- ggplot(subset(combined_annotation_results_scores, Class != "N/A"), aes(x = Medium, y = Class, fill = enriched_versus_depleted_score)) +
+  geom_tile() +
+  scale_fill_gradient2(low = "darkblue", mid = "white", high = "darkred", midpoint = 0, 
+                       guide = guide_colorbar(title = "Score enriched compounds minus 
+score depleted compounds")) +
+  
+  facet_grid(Mix ~ pH) +
+  ggtitle("Annotated significant LogFC scores across all mixes and pH") +
+  theme_bw() +
+  theme(panel.background = element_rect(fill = "lightgrey"))
+
+g1
+
+#Generate heatmap, take Non-Annotated ions and outlier M16 out:
+g1 <- ggplot(subset(combined_annotation_results_scores, Class != "N/A" & Medium != "16"), aes(x = Medium, y = Class, fill = enriched_versus_depleted_score)) +
+  geom_tile() +
+  scale_fill_gradient2(low = "darkblue", mid = "white", high = "darkred", midpoint = 0, 
+                       guide = guide_colorbar(title = "Score enriched compounds minus 
+score depleted compounds")) +
+  
+  facet_grid(Mix ~ pH) +
+  ggtitle("Annotated significant LogFC scores across all mixes and pH") +
+  theme_bw() +
+  theme(panel.background = element_rect(fill = "lightgrey"))
+
+g1
+
+
+
+
+##To validate quality of annotations, we performed a statistical analysis of 'empty' media, comparing media known to be different in their defined composition:
+##Minimal media: We know M1 has no amino acids while M14 does
+##Richer media: We know M8 has sugars (simple carbs), while M9 has not
+##Will these differences show up if we annotate the ions that are significantly different between these pairs of media?
+
+#subset metabolomics data to have empty media (and pH 7) only:
+Metabolomics_empty_media  <- subset(Metabolomics_enrichment_analysis, Mix == "None")
+#View(Metabolomics_empty_media)
+
+subset_data <- Metabolomics_empty_media %>% 
+  filter(Medium %in% c("8", "9"))
+
+#subset_data <- subset(subset_data, pH == 7)
+
+subset_data1 <- subset_data[, c(3, 7:3486)]
+
+##Transform the data in preparation of the boxplots
+long_data <- subset_data1 %>%
+  pivot_longer(
+    cols = -Medium, 
+    names_to = "ion_id",  
+    values_to = "value"  
+  )
+
+#Check normal distribution
+ggplot(long_data, aes(x = value)) + 
+  geom_histogram(binwidth = 0.1, fill = "blue", color = "black") + 
+  labs(title = "Distribution of 'value' in subset_df",
+       x = "Value",
+       y = "Count") +
+  theme_minimal()
+
+
+#Converting the ion_id from a name to a numeric value if needed
+long_data$ion_id <- as.numeric(gsub("X", "", long_data$ion_id))
+
+merged_df <- merge(long_data, annot_df, by="ion_id")
+
+#Filter the dataframe for 'Carbohydrates and Carbohydrate Conjugates' and 'Medium' 8 or 9
+## classses of sugars included in this category (for cl3 annotation; the next level of chemical taxonomic resolution: Mono-, di-, tri-, tetra-saccharides, Sugar Alcohols, Sugar Acids, Amino sugars, Glycosyl compounds, Oligosaccharides, Trisaccharides)
+subset_df <- merged_df[merged_df$cl2 == 'Carbohydrates and Carbohydrate Conjugates' & 
+                         (merged_df$Medium == '8' | merged_df$Medium == '9'), ]
+
+#Control subset: amino acids should be similar
+subset_df_control <- merged_df[merged_df$cl2 == 'Amino Acids, Peptides, and Analogues' & 
+                                 (merged_df$Medium == '8' | merged_df$Medium == '9'), ]
+
+
+
+
+#Filter for disaccharides (an important group of sugars that medium 8 is supplemented in but medium 9 is not, incl: Cellobiose, Maltose, Lactose)
+## difference between these annotations quite striking; annotation correctly picks up on this difference
+subset_df1 <- merged_df[
+  (merged_df$cl3 == 'Disaccharides' ) &
+    (merged_df$Medium == '8' | merged_df$Medium == '9'), 
+]
+
+#Filter for mono- and disaccharides: also D-glucose and fructose (in which medium 8 is enriched but medium 9 has none)
+subset_df2 <- merged_df[
+  (merged_df$cl3 == 'Disaccharides' |
+     merged_df$cl3 == 'Monosaccharides') &
+    (merged_df$Medium == '8' | merged_df$Medium == '9'), 
+]
+
+
+
+#Create the boxplots
+ggplot(subset_df_control, aes(x = Medium, y = value)) +
+  geom_boxplot() +
+  stat_compare_means(method = "t.test") +  
+  labs(title = "Annotated Amino Acids, Peptides, 
+and Analogues for Medium 8 vs. 9",
+       x = "Medium",
+       y = "Value") +
+  theme_minimal()
+##Indeed no difference between annotations for amino acids (which would be expected)
+
+
+ggplot(subset_df, aes(x = Medium, y = value)) +
+  geom_boxplot() +
+  stat_compare_means(method = "t.test") +  
+  labs(title = "Annotated Carbohydrates and Carbohydrate Conjugates for Medium 8 vs. 9",
+       x = "Medium",
+       y = "Value") +
+  theme_minimal()
+
+ggplot(subset_df1, aes(x = Medium, y = value)) +
+  geom_boxplot() +
+  stat_compare_means(method = "t.test", label = "p.signif") +  
+  labs(title = "Annotated Disaccharides
+   for Medium 8 vs. 9",
+       x = "Medium",
+       y = "Value") +
+  theme_minimal()
+
+# with points overlaying
+ggplot(subset_df1, aes(x = Medium, y = value)) +
+  geom_boxplot() +
+  geom_jitter(width = 0.2, shape = 16, color = "grey22", alpha = 0.5) +  
+  stat_compare_means(method = "t.test", label = "p.signif") +  
+  labs(title = "Annotated Disaccharides for Medium 8 vs. 9",
+       x = "Medium",
+       y = "Value") +
+  theme_minimal()
+
+# violin plot
+y_position <- max(subset_df1$value) + (diff(range(subset_df1$value)) * 0.2)
+
+ggplot(subset_df1, aes(x = Medium, y = value)) +
+  geom_violin(trim = FALSE, draw_quantiles = c(0.5)) +  
+  stat_compare_means(method = "t.test", label = "p.signif", 
+                     label.y = y_position) +  
+  labs(title = "Annotated Disaccharides
+    for Medium 8 vs. 9",
+       x = "Medium",
+       y = "Value") +
+  theme_minimal()
+
+
+# Mon- and disaccharides
+ggplot(subset_df2, aes(x = Medium, y = value)) +
+  geom_boxplot() +
+  stat_compare_means(method = "t.test") +  
+  labs(title = "Annotated Mono- and Disaccharides for Medium 8 vs. 9",
+       x = "Medium",
+       y = "Value") +
+  theme_minimal()
+
+
+
+##Now we investigate the amino acid accuracy of annotation: comparing M10 versus M4 (very similar in all other classes, M10 being very poor in amino acids), 
+# or M1 versus M14 (very different in other classes as well, but M1 has no supplemented amino acids at all, whereas M14 does predominantly contain amino acids)
+
+subset_data <- Metabolomics_empty_media %>% 
+  filter(Medium %in% c("1", "14"))
+
+#subset_data <- subset(subset_data, pH == 7)
+
+subset_data1 <- subset_data[, c(3, 7:3486)]
+
+
+## Transform data in preparation of the boxplot
+
+long_data <- subset_data1 %>%
+  pivot_longer(
+    cols = -Medium, 
+    names_to = "ion_id",  
+    values_to = "value"  
+  )
+
+#Check normal distribution of data
+ggplot(long_data, aes(x = value)) + 
+  geom_histogram(binwidth = 0.1, fill = "blue", color = "black") + 
+  labs(title = "Distribution of 'value' in subset_df",
+       x = "Value",
+       y = "Count") +
+  theme_minimal()
+
+#Converting the ion_id from a name to a numeric value if needed
+long_data$ion_id <- as.numeric(gsub("X", "", long_data$ion_id))
+
+merged_df <- merge(long_data, annot_df, by="ion_id")
+
+#Filter the dataframe for 'Amino Acids, Peptides, and Analogues' and 'Medium' 1 or 14
+## classses of aminos included in this category (for cl3 annotation; the next level of chemical taxonomic resolution: Amino Acids and Derivatives, Peptides, Peptidomimetics)
+subset_df <- merged_df[merged_df$cl2 == 'Amino Acids, Peptides, and Analogues' & 
+                         (merged_df$Medium == '1' | merged_df$Medium == '14'), ]
+
+#Filter for Amino Acids and Derivatives 
+subset_df1 <- merged_df[
+  (merged_df$cl3 == 'Amino Acids and Derivatives' ) &
+    (merged_df$Medium == '1' | merged_df$Medium == '14'), 
+]
+
+#Create the boxplots
+ggplot(subset_df, aes(x = Medium, y = value)) +
+  geom_boxplot() +
+  stat_compare_means(method = "t.test") +  
+  labs(title = "Amino Acids, Peptides, and Analogues for Medium 1 vs. 14",
+       x = "Medium",
+       y = "Value") +
+  theme_minimal()
+
+##If we just subset for Amino Acids and Derivatives (from cl3) 
+ggplot(subset_df1, aes(x = Medium, y = value)) +
+  geom_boxplot() +
+  stat_compare_means(method = "t.test") +  
+  labs(title = "Amino Acids and Derivatives for Medium 1 vs. 14",
+       x = "Medium",
+       y = "Value") +
+  theme_minimal()
+
+
+
+
+##Now for richer media with difference in amino acid supplementation: M10 (aa poor) versus M4 (very similar, yet aa rich):
+subset_data <- Metabolomics_empty_media %>% 
+  filter(Medium %in% c("10", "4"))
+
+#subset_data <- subset(subset_data, pH == 7)
+
+subset_data1 <- subset_data[, c(3, 7:3486)]
+
+#Transform data in preparation of the boxplots
+long_data <- subset_data1 %>%
+  pivot_longer(
+    cols = -Medium,  
+    names_to = "ion_id",  
+    values_to = "value"  
+  )
+
+#Check normal distribution of data
+ggplot(long_data, aes(x = value)) + 
+  geom_histogram(binwidth = 0.1, fill = "blue", color = "black") + 
+  labs(title = "Distribution of 'value' in subset_df",
+       x = "Value",
+       y = "Count") +
+  theme_minimal()
+
+#Converting the ion_id from a name to a numeric value if needed
+long_data$ion_id <- as.numeric(gsub("X", "", long_data$ion_id))
+
+merged_df <- merge(long_data, annot_df, by="ion_id")
+
+#Filter the dataframe for 'Amino Acids, Peptides, and Analogues' and 'Medium' 10 or 4
+##classses of aminos included in this category (for cl3 annotation; the next level of chemical taxonomic resolution: Amino Acids and Derivatives, Peptides, Peptidomimetics)
+subset_df <- merged_df[merged_df$cl2 == 'Amino Acids, Peptides, and Analogues' & 
+                         (merged_df$Medium == '10' | merged_df$Medium == '4'), ]
+
+subset_df_control <- merged_df[merged_df$cl2 == 'Nucleosides, Nucleotides, and Analogues' & 
+                                 (merged_df$Medium == '10' | merged_df$Medium == '4'), ]
+
+
+#Filter for Amino Acids and Derivatives 
+subset_df1 <- merged_df[
+  (merged_df$cl3 == 'Amino Acids and Derivatives' ) &
+    (merged_df$Medium == '10' | merged_df$Medium == '4'), 
+]
+
+#Create the boxplots
+ggplot(subset_df_control, aes(x = Medium, y = value)) +
+  geom_boxplot() +
+  stat_compare_means(method = "t.test") +  
+  labs(title = "Nucleosides, Nucleotides, and Analogues, 
+and Analogues for Medium 10 vs. 4",
+       x = "Medium",
+       y = "Value") +
+  theme_minimal()
+##Indeed no difference between annotations for Nucleosides etc. (which would be expected)
+
+ggplot(subset_df, aes(x = Medium, y = value)) +
+  geom_boxplot() +
+  stat_compare_means(method = "t.test") +  
+  labs(title = "Amino Acids, Peptides, and Analogues for Medium 10 vs. 4",
+       x = "Medium",
+       y = "Value") +
+  theme_minimal()
+
+##If we just subset for Amino Acids and Derivatives (from cl3) then the difference becomes slightly more obvious
+ggplot(subset_df1, aes(x = Medium, y = value)) +
+  geom_boxplot() +
+  stat_compare_means(method = "t.test") +  
+  labs(title = "Amino Acids and Derivatives for Medium 10 vs. 4",
+       x = "Medium",
+       y = "Value") +
+  theme_minimal()
+
+
+
+#######################################
+##Correlation networks 16S & Metabolomics
+
+##Dataframes needed: All_mixes (metabolomics data) & TrA0_relative_abundance_table_T
+
+TrA1_relative_abundance_table_T1 <- subset(TrA1_relative_abundance_table_T, !is.na(Medium) & Medium != "15" & !is.na(Transfer) & Transfer != 6 & !is.na(pH))
+All_mixes1 <- subset(All_mixes, !is.na(pH) & !is.na(Replicate))
+
+
+merged_rel_ab_and_metab <- All_mixes1 %>%
+  full_join(TrA1_relative_abundance_table_T1, by = c("Medium", "Replicate", "pH", "Transfer", "Mix", "Alpha_diversity"))
+
+merged_rel_ab_and_metab_Mix1 <- subset(merged_rel_ab_and_metab, Mix == 1)
+merged_rel_ab_and_metab_Mix2 <- subset(merged_rel_ab_and_metab, Mix == 2)
+merged_rel_ab_and_metab_Mix3 <- subset(merged_rel_ab_and_metab, Mix == 3)
+
+##Constructing correlation networks between normalised 16S data and normalised metabolomics data
+#Example below: subsetted datasets that contain the normalised 16S and metabolomics data to make correlation matrices
+#The p-values are corrected for multiple inference using Holm's method:
+
+merged_rel_ab_and_metab<-na.omit(merged_rel_ab_and_metab)
+Mix1_all_bugs_and_compounds<-na.omit(merged_rel_ab_and_metab_Mix1)
+Mix2_all_bugs_and_compounds<-na.omit(merged_rel_ab_and_metab_Mix2)
+Mix3_all_bugs_and_compounds<-na.omit(merged_rel_ab_and_metab_Mix3)
+
+merged_rel_ab_and_metab_Mix2_pH5.5 <- subset(merged_rel_ab_and_metab, pH == 5.5)
+merged_rel_ab_and_metab_Mix2_pH7 <- subset(merged_rel_ab_and_metab, pH == 7)
+
+library(stats)
+library(multcomp)
+
+#Extract columns that start with "ion_"
+ion_columns <- grep("^ion_", names(merged_rel_ab_and_metab_Mix2_pH5.5), value = TRUE)
+
+#Initialise vectors to store results
+correlations <- numeric(length(ion_columns))
+p_values <- numeric(length(ion_columns))
+
+#Calculate Spearman correlations
+for (i in seq_along(ion_columns)) {
+  test_result <- cor.test(merged_rel_ab_and_metab_Mix2_pH5.5[[ion_columns[i]]],
+                          merged_rel_ab_and_metab_Mix2_pH5.5$Alpha_diversity,
+                          method = "spearman")
+  correlations[i] <- test_result$estimate
+  p_values[i] <- test_result$p.value
+}
+
+#Adjust p-values for multiple testing
+p_adjusted <- p.adjust(p_values, method = "BH")
+
+#Count significant correlations with an absolute correlation coefficient > 0.4
+significant_correlations <- sum(p_adjusted < 0.05 & abs(correlations) > 0.4)
+
+#Print the number of significant correlations
+print(significant_correlations)
+
+
+
+##Now we explore shared correlations
+#Extract columns that start with "ion_"
+ion_columns <- grep("^ion_", names(merged_rel_ab_and_metab_Mix2_pH7), value = TRUE)
+
+#Initialise vectors to store results
+correlations_alpha <- numeric(length(ion_columns))
+correlations_e_lenta <- numeric(length(ion_columns))
+p_values_alpha <- numeric(length(ion_columns))
+p_values_e_lenta <- numeric(length(ion_columns))
+
+#Calculate Spearman correlations for both Alpha_diversity and E. lenta
+for (i in seq_along(ion_columns)) {
+  #Correlation with Alpha_diversity
+  test_result_alpha <- cor.test(merged_rel_ab_and_metab_Mix2_pH7[[ion_columns[i]]],
+                                merged_rel_ab_and_metab_Mix2_pH7$Alpha_diversity,
+                                method = "spearman")
+  correlations_alpha[i] <- test_result_alpha$estimate
+  p_values_alpha[i] <- test_result_alpha$p.value
+  
+  #Correlation with E. lenta
+  test_result_e_lenta <- cor.test(merged_rel_ab_and_metab_Mix2_pH7[[ion_columns[i]]],
+                                  merged_rel_ab_and_metab_Mix2_pH7$E._lenta,
+                                  method = "spearman")
+  correlations_e_lenta[i] <- test_result_e_lenta$estimate
+  p_values_e_lenta[i] <- test_result_e_lenta$p.value
+}
+
+#Adjust p-values for multiple testing
+p_adjusted_alpha <- p.adjust(p_values_alpha, method = "BH")
+p_adjusted_e_lenta <- p.adjust(p_values_e_lenta, method = "BH")
+
+#Count significant correlations that are shared between Alpha_diversity and E. lenta
+shared_significant_correlations <- sum(p_adjusted_alpha < 0.05 & abs(correlations_alpha) > 0.4 & 
+                                         p_adjusted_e_lenta < 0.05 & abs(correlations_e_lenta) > 0.4)
+
+#Print the number of shared significant correlations
+print(shared_significant_correlations)
+
+
+#With C. ramosum
+## Extract columns that start with "ion_"
+ion_columns <- grep("^ion_", names(merged_rel_ab_and_metab_Mix2_pH7), value = TRUE)
+
+#Initialise vectors to store results
+correlations_alpha <- numeric(length(ion_columns))
+correlations_c_ram <- numeric(length(ion_columns))
+p_values_alpha <- numeric(length(ion_columns))
+p_values_c_ram <- numeric(length(ion_columns))
+
+# Calculate Spearman correlations for both Alpha_diversity and C. ramosum
+for (i in seq_along(ion_columns)) {
+  # Correlation with Alpha_diversity
+  test_result_alpha <- cor.test(merged_rel_ab_and_metab_Mix2_pH7[[ion_columns[i]]],
+                                merged_rel_ab_and_metab_Mix2_pH7$Alpha_diversity,
+                                method = "spearman")
+  correlations_alpha[i] <- test_result_alpha$estimate
+  p_values_alpha[i] <- test_result_alpha$p.value
+  
+  # Correlation with C. ramosum
+  test_result_c_ram <- cor.test(merged_rel_ab_and_metab_Mix2_pH7[[ion_columns[i]]],
+                                merged_rel_ab_and_metab_Mix2_pH7$C._ramosum,
+                                method = "spearman")
+  correlations_c_ram[i] <- test_result_c_ram$estimate
+  p_values_c_ram[i] <- test_result_c_ram$p.value
+}
+
+#Adjust p-values for multiple testing
+p_adjusted_alpha <- p.adjust(p_values_alpha, method = "BH")
+p_adjusted_c_ram <- p.adjust(p_values_c_ram, method = "BH")
+
+# Count significant correlations that are shared between Alpha_diversity and C. ramosum
+shared_significant_correlations <- sum(p_adjusted_alpha < 0.05 & abs(correlations_alpha) > 0.4 & 
+                                         p_adjusted_c_ram < 0.05 & abs(correlations_c_ram) > 0.4)
+
+# Print the number of shared significant correlations
+print(shared_significant_correlations)
+
+
+
+#subset for mix and pH
+Mix1_all_bugs_and_compounds_5.5<-subset(Mix1_all_bugs_and_compounds, pH == 5.5)
+Mix2_all_bugs_and_compounds_5.5<-subset(Mix2_all_bugs_and_compounds, pH == 5.5)
+Mix3_all_bugs_and_compounds_5.5<-subset(Mix3_all_bugs_and_compounds, pH == 5.5)
+Mix1_all_bugs_and_compounds_7<-subset(Mix1_all_bugs_and_compounds, pH == 7)
+Mix2_all_bugs_and_compounds_7<-subset(Mix2_all_bugs_and_compounds, pH == 7)
+Mix3_all_bugs_and_compounds_7<-subset(Mix3_all_bugs_and_compounds, pH == 7)
+
+Mix1_all_bugs_and_compounds_5.5<-Mix1_all_bugs_and_compounds_5.5[, c(8:3487, 3490:3514, 3516:3523)]
+Mix2_all_bugs_and_compounds_5.5<-Mix2_all_bugs_and_compounds_5.5[, c(8:3487, 3490:3514, 3516:3523)]
+Mix3_all_bugs_and_compounds_5.5<-Mix3_all_bugs_and_compounds_5.5[, c(8:3487, 3490:3514, 3516:3523)]
+Mix1_all_bugs_and_compounds_7<-Mix1_all_bugs_and_compounds_7[, c(8:3487, 3490:3514, 3516:3523)]
+Mix2_all_bugs_and_compounds_7<-Mix2_all_bugs_and_compounds_7[, c(8:3487, 3490:3514, 3516:3523)]
+Mix3_all_bugs_and_compounds_7<-Mix3_all_bugs_and_compounds_7[, c(8:3487, 3490:3514, 3516:3523)]
+
+
+
+#write correlation matrices
+library(RcmdrMisc)
+res_metab_Mix1_5.5<-rcorr.adjust(as.matrix(Mix1_all_bugs_and_compounds_5.5), type="spearman")
+res_metab_Mix1_7<-rcorr.adjust(as.matrix(Mix1_all_bugs_and_compounds_7), type="spearman")
+res_metab_Mix2_5.5<-rcorr.adjust(as.matrix(Mix2_all_bugs_and_compounds_5.5), type="spearman")
+res_metab_Mix2_7<-rcorr.adjust(as.matrix(Mix2_all_bugs_and_compounds_7), type="spearman")
+res_metab_Mix3_5.5<-rcorr.adjust(as.matrix(Mix3_all_bugs_and_compounds_5.5), type="spearman")
+res_metab_Mix3_7<-rcorr.adjust(as.matrix(Mix3_all_bugs_and_compounds_7), type="spearman")
+
+#investigate correlation coefficient histograms for each combination of Mix * pH
+hist(res_metab_Mix2_5.5[["R"]][["r"]],br=100)
+hist(res_metab_Mix2_7[["R"]][["r"]],br=100)
+hist(res_metab_Mix1_5.5[["R"]][["r"]],br=100)
+hist(res_metab_Mix1_7[["R"]][["r"]],br=100)
+hist(res_metab_Mix3_5.5[["R"]][["r"]],br=100)
+hist(res_metab_Mix3_7[["R"]][["r"]],br=100)
+
+#To prepare to make correlation networks, compact correlation coefficient matrices to only contain any ion or strain that correlates significantly with (another) strain
+#In other words: we are not interested in keeping correlation coefficients of ions that only significantly correlate with other ions
+
+# Subset significant correlations with p-value < 0.05
+
+res_metab_Mix1_5.5[["P"]][res_metab_Mix1_5.5[["P"]] == "<.0001"] <- 0.0001
+res_metab_Mix2_5.5[["P"]][res_metab_Mix2_5.5[["P"]] == "<.0001"] <- 0.0001
+res_metab_Mix3_5.5[["P"]][res_metab_Mix3_5.5[["P"]] == "<.0001"] <- 0.0001
+res_metab_Mix1_7[["P"]][res_metab_Mix1_7[["P"]] == "<.0001"] <- 0.0001
+res_metab_Mix2_7[["P"]][res_metab_Mix2_7[["P"]] == "<.0001"] <- 0.0001
+res_metab_Mix3_7[["P"]][res_metab_Mix3_7[["P"]] == "<.0001"] <- 0.0001
+
+significant_correlations_Mix1_5.5 <- res_metab_Mix1_5.5[["P"]] < 0.05
+significant_correlations_Mix2_5.5 <- res_metab_Mix2_5.5[["P"]] < 0.05
+significant_correlations_Mix3_5.5 <- res_metab_Mix3_5.5[["P"]] < 0.05
+significant_correlations_Mix1_7 <- res_metab_Mix1_7[["P"]] < 0.05
+significant_correlations_Mix2_7 <- res_metab_Mix2_7[["P"]] < 0.05
+significant_correlations_Mix3_7 <- res_metab_Mix3_7[["P"]] < 0.05
+
+#Count significant correlations for each species
+selected_cols_Mix1_5.5 <- significant_correlations_Mix1_5.5[1:3513, 3481:3513]
+selected_cols_Mix2_5.5 <- significant_correlations_Mix2_5.5[1:3513, 3481:3513]
+selected_cols_Mix3_5.5 <- significant_correlations_Mix3_5.5[1:3513, 3481:3513]
+selected_cols_Mix1_7 <- significant_correlations_Mix1_7[1:3513, 3481:3513]
+selected_cols_Mix2_7 <- significant_correlations_Mix2_7[1:3513, 3481:3513]
+selected_cols_Mix3_7 <- significant_correlations_Mix3_7[1:3513, 3481:3513]
+
+# Counting TRUE values in each column
+true_counts_Mix1_5.5 <- colSums(selected_cols_Mix1_5.5)
+true_counts_Mix2_5.5 <- colSums(selected_cols_Mix2_5.5)
+true_counts_Mix3_5.5 <- colSums(selected_cols_Mix3_5.5)
+true_counts_Mix1_7 <- colSums(selected_cols_Mix1_7)
+true_counts_Mix2_7 <- colSums(selected_cols_Mix2_7)
+true_counts_Mix3_7 <- colSums(selected_cols_Mix3_7)
+
+# Creating a new dataframe with the counts
+true_counts_Mix1_5.5 <- as.data.frame(true_counts_Mix1_5.5)
+true_counts_Mix2_5.5 <- as.data.frame(true_counts_Mix2_5.5)
+true_counts_Mix3_5.5 <- as.data.frame(true_counts_Mix3_5.5)
+true_counts_Mix1_7 <- as.data.frame(true_counts_Mix1_7)
+true_counts_Mix2_7 <- as.data.frame(true_counts_Mix2_7)
+true_counts_Mix3_7 <- as.data.frame(true_counts_Mix3_7)
+
+
+# Extract correlation coefficient matrix
+correlation_matrix_Mix1_5.5 <- res_metab_Mix1_5.5[["R"]][["r"]]
+correlation_matrix_Mix2_5.5 <- res_metab_Mix2_5.5[["R"]][["r"]]
+correlation_matrix_Mix3_5.5 <- res_metab_Mix3_5.5[["R"]][["r"]]
+correlation_matrix_Mix1_7 <- res_metab_Mix1_7[["R"]][["r"]]
+correlation_matrix_Mix2_7 <- res_metab_Mix2_7[["R"]][["r"]]
+correlation_matrix_Mix3_7 <- res_metab_Mix3_7[["R"]][["r"]]
+
+
+#code describing extracting ions correlating significantly with bugs
+##Mix 2, pH 5.5
+mat <- res_metab_Mix2_5.5[["P"]]
+mat2 <- correlation_matrix_Mix2_5.5
+
+#Reorder so we have the inter-species correlations first:
+# Create an index vector
+new_order <- c(3481:3513, 1:3480)
+
+#Reorder both the rows and columns
+mat_reordered <-mat[new_order, new_order]
+mat2_reordered <- mat2[new_order, new_order]
+
+#Check the structure of the reordered matrices
+str(mat_reordered)
+str(mat2_reordered)
+
+keep_colnum <- 35
+keep_vec <- rep(TRUE, keep_colnum)
+mat_reordered[mat_reordered == "    NA"] <- 11
+keep_vec <- c(keep_vec, colSums(mat_reordered[1:keep_colnum,(keep_colnum+1):length(colnames(mat_reordered))] < 0.05) > 0)
+mat_filt_Mix2_5.5 <- mat2_reordered[keep_vec, keep_vec]
+
+#Mix 2, pH 7
+
+mat <- res_metab_Mix2_7[["P"]]
+mat2 <- correlation_matrix_Mix2_7
+
+#Reorder so we have the inter-species correlations first:
+# Create an index vector
+new_order <- c(3481:3513, 1:3480)
+
+#Reorder both the rows and columns
+mat_reordered <-mat[new_order, new_order]
+mat2_reordered <- mat2[new_order, new_order]
+
+#Check the structure of the reordered matrices
+str(mat_reordered)
+str(mat2_reordered)
+
+keep_colnum <- 35
+keep_vec <- rep(TRUE, keep_colnum)
+mat_reordered[mat_reordered == "    NA"] <- 11
+keep_vec <- c(keep_vec, colSums(mat_reordered[1:keep_colnum,(keep_colnum+1):length(colnames(mat_reordered))] < 0.05) > 0)
+mat_filt_Mix2_7 <- mat2_reordered[keep_vec, keep_vec]
+
+#Optional: Take above steps of filtering correlation matrices for all the ones below:
+#mat_filt_Mix1_5.5
+#mat_filt_Mix3_5.5
+#mat_filt_Mix1_7
+#mat_filt_Mix3_7
+
+#mat_filt_Mix1_5.5[is.na(mat_filt_Mix1_5.5)] <- 0
+mat_filt_Mix2_5.5[is.na(mat_filt_Mix2_5.5)] <- 0
+#mat_filt_Mix3_5.5[is.na(mat_filt_Mix3_5.5)] <- 0
+#mat_filt_Mix1_7[is.na(mat_filt_Mix1_7)] <- 0
+mat_filt_Mix2_7[is.na(mat_filt_Mix2_7)] <- 0
+#mat_filt_Mix3_7[is.na(mat_filt_Mix3_7)] <- 0
+
+#remove inter-ion correlations for Mix 2 to keep it useful for network visualisation 
+#Both dataframes have a different number of ions that significantly correlated with any of the bacteria, so hence the different 0 assignments to the matrix:
+mat_filt_Mix2_5.5[34:599, 34:599] <- 0
+mat_filt_Mix2_7[34:522, 34:522] <- 0
+#mat_filt_Mix3_7[37:51, 37:51] <- 0
+
+#Make networks
+library(igraph)
+
+#Correlation network Mix 2 pH 5.5
+colnames(mat_filt_Mix2_5.5) <- gsub("^ion_", "", colnames(mat_filt_Mix2_5.5))
+try1<-mat_filt_Mix2_5.5
+try2 <- as.matrix(try1)
+try2[try2 >= -0.65 & try2 <= 0.65] <- 0
+try2_2 <- try2[rowSums(try2 != 0) > 0, colSums(try2 != 0) > 0]
+
+try_abs <- abs(try2)
+try_abs2 <- try_abs[rowSums(try_abs) > 0, colSums(try_abs) > 0]
+network <- graph_from_adjacency_matrix(try_abs2, weighted = TRUE, mode = "undirected", diag = FALSE)
+network2 <- graph_from_adjacency_matrix(try2_2, weighted = TRUE, mode = "undirected", diag = FALSE)
+
+mat <- try2_2
+arb_num <- ceiling(abs(min(mat)) + 1)
+net <- graph_from_adjacency_matrix(mat+arb_num, weighted = TRUE, mode = "undirected", diag = FALSE)
+
+
+#color assignment logic
+# Nodes that are just numbers get yellow, else they get blue
+V(net)$color <- ifelse(!is.na(as.numeric(V(net)$name)), "#FEC20C", "lightblue")
+
+# Update vertex label size based on the new naming scheme
+vertex_label_cex <- ifelse(!is.na(as.numeric(V(net)$name)), 0.5, 0.75)
+vertex_size_cex <- ifelse(!is.na(as.numeric(V(net)$name)), 7, 9)
+
+k <- plot(network, 
+          layout = layout_with_fr(network), 
+          edge.width = (abs(E(network)$weight))*4, 
+          edge.color = ifelse(E(network2)$weight < 0, "mediumpurple", "mediumseagreen"),
+          main = "Correlation Network Bugs * Compounds, Mix 2 pH 5.5, sign. correlations (|r|>0.65)", 
+          vertex.label.cex = vertex_label_cex,
+          vertex.label.color = "black",
+          vertex.label.family = "Arial",
+          vertex.color = V(net)$color,
+          vertex.size = vertex_size_cex,
+          vertex.shape = "circle",
+          edge.size = 16)
+
+
+#Correlation network Mix 2 pH 7
+colnames(mat_filt_Mix2_7) <- gsub("^ion_", "", colnames(mat_filt_Mix2_7))
+try1<-mat_filt_Mix2_7
+try2 <- as.matrix(try1)
+try2[try2 >= -0.62 & try2 <= 0.62] <- 0
+try2_2 <- try2[rowSums(try2 != 0) > 0, colSums(try2 != 0) > 0]
+
+try_abs <- abs(try2)
+try_abs2 <- try_abs[rowSums(try_abs) > 0, colSums(try_abs) > 0]
+network <- graph_from_adjacency_matrix(try_abs2, weighted = TRUE, mode = "undirected", diag = FALSE)
+network2 <- graph_from_adjacency_matrix(try2_2, weighted = TRUE, mode = "undirected", diag = FALSE)
+
+mat <- try2_2
+arb_num <- ceiling(abs(min(mat)) + 1)
+net <- graph_from_adjacency_matrix(mat+arb_num, weighted = TRUE, mode = "undirected", diag = FALSE)
+
+#color assignment logic
+# Nodes that are just numbers get yellow, else they get blue
+V(net)$color <- ifelse(!is.na(as.numeric(V(net)$name)), "#FEC20C", "lightblue")
+
+# Update vertex label size based on the new naming scheme
+vertex_label_cex <- ifelse(!is.na(as.numeric(V(net)$name)), 0.5, 0.75)
+vertex_size_cex <- ifelse(!is.na(as.numeric(V(net)$name)), 7, 9)
+
+k <- plot(network, 
+          layout = layout_with_fr(network), 
+          edge.width = (abs(E(network)$weight))*4, 
+          edge.color = ifelse(E(network2)$weight < 0, "mediumpurple", "mediumseagreen"),
+          main = "Correlation Network Bugs * Compounds, Mix 2 pH 7, sign. correlations (|rho|>0.62)", 
+          vertex.label.cex = vertex_label_cex,
+          vertex.label.color = "black",
+          vertex.label.family = "Arial",
+          vertex.color = V(net)$color,
+          vertex.size = 9,
+          vertex.shape = "circle",
+          edge.size = 16)
+
+
+
+################
+#Mathematical modelling
+#See modelling R script used in Github repository
+###Analysing Output for Modelling with Monoculture Kinetics
+#Using monocultures_growth_final as defined earlier in script
+
+
+#load in output files (15B and 16 were not run because no species grew in monoculture): 
+model_output_1 <- read_csv("Documents/model_output_1.csv")
+model_output_2 <- read_csv("Documents/model_output_2.csv")
+model_output_3 <- read_csv("Documents/model_output_3.csv")
+model_output_4 <- read_csv("Documents/model_output_4.csv")
+model_output_5 <- read_csv("Documents/model_output_5.csv")
+model_output_7 <- read_csv("Documents/model_output_7.csv")
+model_output_8 <- read_csv("Documents/model_output_8.csv")
+model_output_9 <- read_csv("Documents/model_output_9.csv")
+model_output_10 <- read_csv("Documents/model_output_10.csv")
+model_output_11 <- read_csv("Documents/model_output_11.csv")
+model_output_13 <- read_csv("Documents/model_output_13.csv")
+model_output_14 <- read_csv("Documents/model_output_14.csv")
+
+model_output_1$Medium <- "1"
+model_output_2$Medium <- "2"
+model_output_3$Medium <- "3"
+model_output_4$Medium <- "4"
+model_output_5$Medium <- "5"
+model_output_7$Medium <- "7"
+model_output_8$Medium <- "8"
+model_output_9$Medium <- "9"
+model_output_10$Medium <- "10"
+model_output_11$Medium <- "11"
+model_output_13$Medium <- "13"
+model_output_14$Medium <- "14"
+
+##Add column with total number of co-culture survivors
+#i.e., at least 2 reps at >0.5%
+model_output_1$Coculture_survivors <- "6"
+model_output_2$Coculture_survivors <- "3"
+model_output_3$Coculture_survivors<- "6"
+model_output_4$Coculture_survivors <- "6"
+model_output_5$Coculture_survivors <- "8"
+model_output_7$Coculture_survivors <- "11"
+model_output_8$Coculture_survivors <- "10"
+model_output_9$Coculture_survivors <- "13"
+model_output_10$Coculture_survivors <- "6"
+model_output_11$Coculture_survivors <- "8"
+model_output_13$Coculture_survivors <- "4"
+model_output_14$Coculture_survivors <- "2"
+
+##Merge
+combined_model_output <- rbind(
+  model_output_1,
+  model_output_2,
+  model_output_3,
+  model_output_4,
+  model_output_5,
+  model_output_7,
+  model_output_8,
+  model_output_9,
+  model_output_10,
+  model_output_11,
+  model_output_13,
+  model_output_14
+)
+
+##Add rows for Medium 15B and 16
+# Create a new row with all values set to 0
+new_row <- as.data.frame(matrix(0, ncol = ncol(combined_model_output), nrow = 1))
+names(new_row) <- names(combined_model_output)
+new_row$Medium <- "15B"
+combined_model_output <- rbind(combined_model_output, new_row)
+
+new_row <- as.data.frame(matrix(0, ncol = ncol(combined_model_output), nrow = 1))
+names(new_row) <- names(combined_model_output)
+new_row$Medium <- "16"
+combined_model_output <- rbind(combined_model_output, new_row)
+
+#Add co-culture survivors
+combined_model_output$Coculture_survivors[combined_model_output$Medium == "15B"] <- 2
+combined_model_output$Coculture_survivors[combined_model_output$Medium == "16"] <- 2
+
+
+##Add column with total number of monoculture survivors
+monoculture_survivor_richness <- monocultures_growth_final %>%
+  dplyr::group_by(Medium) %>%
+  dplyr::summarize(monoculture_survivor_richness = sum(MaxOD > 0, na.rm = TRUE))
+
+combined_model_output <- combined_model_output %>%
+  left_join(monoculture_survivor_richness, by = "Medium")
+
+
+
+
+##Now, we plot the model output
+
+desired_order <- c("15B", "13","16", "14", "1", "2", "5", "10", "7", "4", "11", "3", "9", "8")
+
+# Reorder the 'Medium' factor levels
+combined_model_output$Medium <- factor(combined_model_output$Medium, levels = desired_order)
+
+combined_model_output
+
+my_palette <- brewer.pal(4, "RdBu")
+ggplot(combined_model_output, aes(x = Medium, y = Fraction_survivors_correctly_predicted)) + 
+  geom_boxplot(alpha = 1, color = NA, fill = NA) +  
+  geom_jitter(aes(color = monoculture_survivor_richness), width = 0.2, size = 1, alpha = 0.5) +  
+  scale_color_gradientn(colors = my_palette) +  
+  labs(x = "Medium",
+       y = "Fraction of co-culture survivors 
+       correctly predicted",
+       color = "Monoculture 
+survivor richness") +
+  theme_bw() +
+  theme(
+    axis.title = element_text(size = rel(1.2)),  
+    axis.text = element_text(size = rel(1.1))    
+  )
+
+#With a different shape for 16 and 15B since they were not modelled
+# Create a new column for shape based on the condition
+combined_model_output$Shape <- ifelse(combined_model_output$Medium %in% c("15B", "16"), "Square", "Circle")
+
+ggplot(combined_model_output, aes(x = Medium, y = Fraction_survivors_correctly_predicted)) + 
+  geom_boxplot(alpha = 1, color = NA, fill = NA) +  
+  geom_jitter(aes(color = monoculture_survivor_richness, shape = Shape), width = 0.2, size = 1.5, alpha = 0.75) +  
+  scale_color_gradientn(colors = my_palette) +
+  scale_shape_manual(values = c("Circle" = 16, "Square" = 15)) + # Mapping "Circle" to shape 16 (dot), "Square" to shape 15 (square); the latter being unrunnable simulations due to no monoculture survivors at all. 
+  labs(x = "Medium",
+       y = "Fraction of co-culture survivors 
+       correctly predicted",
+       color = "Monoculture 
+survivor richness",
+       shape = "Shape") +
+  theme_bw() +
+  theme(
+    axis.title = element_text(size = rel(1.2)),  
+    axis.text = element_text(size = rel(1.1)), 
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    axis.line = element_line(color = "black"),
+    axis.ticks = element_line(color = "black"))
+
+
+
+##Plot model performance against our two metrics of medium complexity
+
+##First: calculate mean Fraction_survivors_correctly_predicted for each Medium
+combined_model_output1 <- combined_model_output %>%
+  dplyr::group_by(Medium) %>%
+  dplyr::summarise(Mean_fraction_survivors_correctly_predicted = mean(Fraction_survivors_correctly_predicted, na.rm = TRUE))
+
+##Second: merge these metrics against the output; see Scatterplots1_df_B formulated earlier in script
+View(Scatterplots1_df_B)
+
+#Take columns of interest:
+Scatterplots1_df_B_selected <- Scatterplots1_df_B %>%
+  select(Medium, Chemical_richness, Mean_Alpha_div, Monoculture_survivor_richness1)
+
+# Merge the selected columns with combined_model_output by 'Medium'
+combined_model_output2 <- combined_model_output1 %>%
+  left_join(Scatterplots1_df_B_selected, by = "Medium")
+
+#View(combined_model_output2)
+
+correlationA <- cor.test(combined_model_output2$Chemical_richness, combined_model_output2$Mean_fraction_survivors_correctly_predicted, method = "spearman")
+correlationB <- cor.test(combined_model_output2$Monoculture_survivor_richness1, combined_model_output2$Mean_fraction_survivors_correctly_predicted, method = "spearman")
+
+plotA <- ggplot(combined_model_output2, aes(x = Chemical_richness, y = Mean_fraction_survivors_correctly_predicted, color = Medium)) +
+  geom_smooth(aes(group=1), method = "lm", se = TRUE, color = "darkgrey", linetype = "dashed", alpha = 0.2) + 
+  geom_point(aes(size = Mean_Alpha_div), alpha = 0.8) +
+  annotate("text", x = -Inf, y = Inf, label = paste("     rho = ", round(correlationA$estimate, 2),"*"), hjust = 0, vjust = 1, size = 6) +
+  scale_color_manual(values=c("black", "#00AFBB", "#2e37fe", "darkorchid1", "green", "#0072B2", "indianred","gold1", "firebrick4", "springgreen3",  "chocolate1","#6C0BA9", "red", "#999999", "magenta"), name="Medium") +
+  scale_size(range = c(1, 10)) +
+  scale_y_continuous(limits = c(-0.2, 0.9)) + 
+  theme_minimal() +
+  labs(x = "Chemical richness", 
+       y = "Mean fraction 
+survivors correctly predicted",
+       size = "Mean alpha diversity 
+across mixes") +
+  theme(axis.text = element_text(size = 16), 
+        axis.title = element_text(size = 16),
+        legend.title = element_text(size = 16),
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(), 
+        axis.line = element_line(), 
+        legend.text = element_text(size = 14)) +
+  guides(color = guide_legend(override.aes = list(size = 5)))
+plotA
+
+
+plotB <- ggplot(combined_model_output2, aes(x = Monoculture_survivor_richness1, y = Mean_fraction_survivors_correctly_predicted, color = Medium)) +
+  geom_smooth(aes(group=1), method = "lm", se = TRUE, color = "darkgrey", linetype = "dashed", alpha = 0.2) + 
+  geom_point(aes(size = Mean_Alpha_div), alpha = 0.8) +
+  annotate("text", x = -Inf, y = Inf, label = paste("     rho = ", round(correlationB$estimate, 2),"**"), hjust = 0, vjust = 1, size = 6) +
+  scale_color_manual(values=c("black", "#00AFBB", "#2e37fe", "darkorchid1", "green", "#0072B2", "indianred","gold1", "firebrick4", "springgreen3",  "chocolate1","#6C0BA9", "red", "#999999", "magenta"), name="Medium") +
+  scale_size(range = c(1, 10)) +
+  scale_y_continuous(limits = c(-0.2, 0.9)) + 
+  theme_minimal() +
+  labs(x = "Monoculture survivor richness", 
+       y = "Mean fraction 
+survivors correctly predicted",
+       size = "Mean alpha diversity 
+across mixes") +
+  theme(axis.text = element_text(size = 16), 
+        axis.title = element_text(size = 16),
+        legend.title = element_text(size = 16),
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(), 
+        axis.line = element_line(), 
+        legend.text = element_text(size = 14)) +
+  guides(color = guide_legend(override.aes = list(size = 5)))
+plotB
+
+
+
+#Effect of inoculum load on final load
+#Does the rank species have in the inoculum correlate positively with the rank they attain in co-culture?
+
+#first, subset by mix
+
+TrA1_relative_abundance_table_T_Mix1 <- subset(TrA1_relative_abundance_table_T, Mix== 1)
+
+#Extract relevant columns (from column 2 to 35) for the first 3 rows
+inoc_data <- TrA1_relative_abundance_table_T_Mix1[1:3, 2:35]
+#Calc. mean relative abundance for each species
+mean_abundance_inoc <- colMeans(inoc_data)
+#Rank the species based on mean relative abundance
+# Note: lower rank means higher abundance
+ranked_species_inoc <- rank(-mean_abundance_inoc)  # We use -mean_abundance to rank in descending order
+#Create the dataframe
+ranks_TrA1_inoculum <- data.frame(
+  Species = names(ranked_species_inoc),
+  Rank = ranked_species_inoc
+)
+
+#Sorting the dataframe by Rank to see the highest ranking species at the top
+ranks_TrA1_inoculum <- ranks_TrA1_inoculum[order(ranks_TrA1_inoculum$Rank), ]
+print(ranks_TrA1_inoculum)
+
+
+#Now, we look across media
+TrA1_relative_abundance_table_T_Mix1a <- subset(TrA1_relative_abundance_table_T_Mix1, Transfer == 9)
+final_data <- TrA1_relative_abundance_table_T_Mix1a[, 2:35]
+#Calculate mean relative abundance for each species
+mean_abundance_final <- colMeans(final_data)
+# Rank the species based on mean relative abundance
+# Note: lower rank means higher abundance
+ranked_species_final <- rank(-mean_abundance_final)  # We use -mean_abundance to rank in descending order
+#Next, create the dataframe
+ranks_TrA1_final <- data.frame(
+  Species = names(ranked_species_final),
+  Rank = ranked_species_final
+)
+
+
+#Compare
+merged_data_ranks <- merge(ranks_TrA1_inoculum, ranks_TrA1_final, by = "Species", suffixes = c("_inoculum", "_final"))
+long_data_ranks <- pivot_longer(merged_data_ranks, cols = -Species, names_to = "Condition", values_to = "Rank")
+long_data_ranks$Condition <- sub("_", " ", long_data_ranks$Condition)
+long_data_ranks$Condition <- factor(long_data_ranks$Condition, levels = c("Rank inoculum", "Rank final"))
+
+
+Ranks_comparison_mix1 <- ggplot(long_data_ranks, aes(x = Condition, y = Rank, group = Species)) +
+  geom_line(aes(color = Species)) + 
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none") +
+  labs(title = "Mix-1",
+       x = "Condition",
+       y = "Rank",
+       color = "Species",
+       shape = "Species")
+
+Ranks_comparison_mix1 
+
+Ranks_comparison_mix1_cor <- cor.test(merged_data_ranks$Rank_inoculum, merged_data_ranks$Rank_final, method = "spearman")
+Ranks_comparison_mix1_cor
+
+
+
+#Same for Mix2:
+TrA1_relative_abundance_table_T_Mix2 <- subset(TrA1_relative_abundance_table_T, Mix== 2)
+
+#Extract relevant columns (from column 2 to 35) for the first 3 rows
+inoc_data <- TrA1_relative_abundance_table_T_Mix2[1:3, 2:35]
+#Calculate mean relative abundance for each species
+mean_abundance_inoc <- colMeans(inoc_data)
+#Rank the species based on mean relative abundance
+#Note: lower rank means higher abundance
+ranked_species_inoc <- rank(-mean_abundance_inoc)  # We use -mean_abundance to rank in descending order
+
+
+ranks_TrA1_inoculum <- data.frame(
+  Species = names(ranked_species_inoc),
+  Rank = ranked_species_inoc
+)
+
+#Sorting the dataframe by Rank to see the highest ranking species at the top
+ranks_TrA1_inoculum <- ranks_TrA1_inoculum[order(ranks_TrA1_inoculum$Rank), ]
+print(ranks_TrA1_inoculum)
+
+
+#Now, we look across media
+TrA1_relative_abundance_table_T_Mix2a <- subset(TrA1_relative_abundance_table_T_Mix2, Transfer == 9)
+final_data <- TrA1_relative_abundance_table_T_Mix2a[, 2:35]
+#Calculate mean relative abundance for each species
+mean_abundance_final <- colMeans(final_data)
+#Rank the species based on mean relative abundance
+#Note: lower rank means higher abundance
+ranked_species_final <- rank(-mean_abundance_final)  # We use -mean_abundance to rank in descending order
+#Next, create the dataframe
+ranks_TrA1_final <- data.frame(
+  Species = names(ranked_species_final),
+  Rank = ranked_species_final
+)
+
+
+
+#Compare
+merged_data_ranks <- merge(ranks_TrA1_inoculum, ranks_TrA1_final, by = "Species", suffixes = c("_inoculum", "_final"))
+long_data_ranks <- pivot_longer(merged_data_ranks, cols = -Species, names_to = "Condition", values_to = "Rank")
+long_data_ranks$Condition <- sub("_", " ", long_data_ranks$Condition)
+long_data_ranks$Condition <- factor(long_data_ranks$Condition, levels = c("Rank inoculum", "Rank final"))
+
+
+Ranks_comparison_mix2 <- ggplot(long_data_ranks, aes(x = Condition, y = Rank, group = Species)) +
+  geom_line(aes(color = Species)) + 
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none") +
+  labs(title = "Mix-2",
+       x = "Condition",
+       y = "Rank",
+       color = "Species",
+       shape = "Species")
+
+Ranks_comparison_mix2 
+
+Ranks_comparison_mix2_cor <- cor.test(merged_data_ranks$Rank_inoculum, merged_data_ranks$Rank_final, method = "spearman")
+Ranks_comparison_mix2_cor 
+
+
+
+
+#Same for Mix3:
+TrA1_relative_abundance_table_T_Mix3 <- subset(TrA1_relative_abundance_table_T, Mix== 3)
+
+#Extract relevant columns (from column 2 to 35) for the first 3 rows
+inoc_data <- TrA1_relative_abundance_table_T_Mix3[1:3, 2:35]
+#Calculate mean relative abundance for each species
+mean_abundance_inoc <- colMeans(inoc_data)
+#Rank the species based on mean relative abundance
+#Note: lower rank means higher abundance
+ranked_species_inoc <- rank(-mean_abundance_inoc)  # We use -mean_abundance to rank in descending order
+
+
+ranks_TrA1_inoculum <- data.frame(
+  Species = names(ranked_species_inoc),
+  Rank = ranked_species_inoc
+)
+
+#Sorting the dataframe by Rank to see the highest ranking species at the top
+ranks_TrA1_inoculum <- ranks_TrA1_inoculum[order(ranks_TrA1_inoculum$Rank), ]
+print(ranks_TrA1_inoculum)
+
+
+#Now, we look across media
+TrA1_relative_abundance_table_T_Mix3a <- subset(TrA1_relative_abundance_table_T_Mix3, Transfer == 9)
+final_data <- TrA1_relative_abundance_table_T_Mix3a[, 2:35]
+#Calculate mean relative abundance for each species
+mean_abundance_final <- colMeans(final_data)
+# Rank the species based on mean relative abundance
+# Note: lower rank means higher abundance
+ranked_species_final <- rank(-mean_abundance_final)  # We use -mean_abundance to rank in descending order
+#Next, create the dataframe
+ranks_TrA1_final <- data.frame(
+  Species = names(ranked_species_final),
+  Rank = ranked_species_final
+)
+
+
+
+#Compare
+merged_data_ranks <- merge(ranks_TrA1_inoculum, ranks_TrA1_final, by = "Species", suffixes = c("_inoculum", "_final"))
+long_data_ranks <- pivot_longer(merged_data_ranks, cols = -Species, names_to = "Condition", values_to = "Rank")
+long_data_ranks$Condition <- sub("_", " ", long_data_ranks$Condition)
+long_data_ranks$Condition <- factor(long_data_ranks$Condition, levels = c("Rank inoculum", "Rank final"))
+
+
+Ranks_comparison_mix3 <- ggplot(long_data_ranks, aes(x = Condition, y = Rank, group = Species)) +
+  geom_line(aes(color = Species)) + 
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none") +
+  labs(title = "Mix-3",
+       x = "Condition",
+       y = "Rank",
+       color = "Species",
+       shape = "Species")
+
+Ranks_comparison_mix3 
+
+Ranks_comparison_mix3_cor <- cor.test(merged_data_ranks$Rank_inoculum, merged_data_ranks$Rank_final, method = "spearman")
+Ranks_comparison_mix3_cor 
+
+#library(patchwork)
+
+
+combined_plots_ranks <- Ranks_comparison_mix1 + Ranks_comparison_mix2 + Ranks_comparison_mix3 + 
+  plot_layout(ncol = 3)
+combined_plots_ranks
+
+
+
+
+
+
+
+
+###(Relative) importance variables pH, Mix and Medium in driving variance in TrA1
+
+library(vegan)
+
+species_data <- TrA1_relative_abundance_table_T[10:307, 2:35]
+#if only interested in alpha diversity, use:
+species_data1 <- TrA1_relative_abundance_table_T[10:307, 36]
+env_data <- TrA1_relative_abundance_table_T[10:307, c("pH", "Medium", "Mix", "Replicate")]
+env_data$pH <- as.factor(env_data$pH)
+env_data$Mix <- as.factor(env_data$Mix)
+env_data$Replicate <- as.factor(env_data$Replicate)
+env_data$Medium <- as.factor(env_data$Medium)
+
+# RDA analysis
+#rda_result <- rda(species_data ~ pH + Medium + Mix, data = env_data)
+rda_result <- rda(species_data ~ pH + Medium + Mix + Replicate, data = env_data)
+summary(rda_result)
+
+#Run variance partitioning
+vpart <- varpart(species_data1, env_data$pH, env_data$Medium, env_data$Mix, env_data$Replicate)
+summary(vpart)
+
+#Permutation test for significance
+permutest_result <- anova(rda_result, permutations = 999)
+print(permutest_result)
+
+#Biplots
+plot(rda_result)
+
+#Triplots (to see species scores as well)
+plot(rda_result, type = "t")
+
